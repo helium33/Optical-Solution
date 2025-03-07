@@ -1,0 +1,52 @@
+{
+    "navbar": [
+      {
+        "id": 1,
+        "name": "Sunglasses",
+        "submenu": [
+          { "id": 1, "title": "New Arrivals", "link": "/sunglasses/new" },
+          { "id": 2, "title": "Bestsellers", "link": "/sunglasses/bestsellers" },
+          { "id": 3, "title": "Men's Sunglasses", "link": "/sunglasses/men" },
+          { "id": 4, "title": "Women's Sunglasses", "link": "/sunglasses/women" },
+          { "id": 5, "title": "Kids' Sunglasses", "link": "/sunglasses/kids" },
+          { "id": 6, "title": "Photochromic Sunglasses (Gray, Brown, Blue, etc.)", "link": "/sunglasses/photochromic" },
+          { "id": 7, "title": "Polarized Sunglasses", "link": "/sunglasses/polarized" },
+          { "id": 8, "title": "UV Protection Sunglasses", "link": "/sunglasses/uv-protection" }
+        ]
+      },
+      {
+        "id": 2,
+        "name": "Eyeglasses",
+        "submenu": [
+          { "id": 1, "title": "New Arrivals", "link": "/eyeglasses/new" },
+          { "id": 2, "title": "Bestsellers", "link": "/eyeglasses/bestsellers" },
+          { "id": 3, "title": "Men's Eyeglasses", "link": "/eyeglasses/men" },
+          { "id": 4, "title": "Women's Eyeglasses", "link": "/eyeglasses/women" },
+          { "id": 5, "title": "Kids' Eyeglasses", "link": "/eyeglasses/kids" },
+          { "id": 6, "title": "Blue Light Blocking Glasses", "link": "/eyeglasses/blue-light-blocking" },
+          { "id": 7, "title": "Prescription Glasses", "link": "/eyeglasses/prescription" },
+          { "id": 8, "title": "Fashion Glasses", "link": "/eyeglasses/fashion" }
+        ]
+      },
+      {
+        "id": 3,
+        "name": "Lenses",
+        "submenu": [
+          { "id": 1, "title": "Photochromic Lenses", "link": "/lenses/photochromic" },
+          { "id": 2, "title": "Blue Light Blocking", "link": "/lenses/blue-light" },
+          { "id": 3, "title": "Progressive Lenses", "link": "/lenses/progressive" }
+        ]
+      },
+      {
+        "id": 4,
+        "name": "Features",
+        "submenu": [
+          { "id": 1, "title": "Bestsellers", "link": "/features/bestsellers" },
+          { "id": 2, "title": "New Arrivals", "link": "/features/new-arrivals" }
+        ]
+      }
+    ]
+  }
+
+
+  
