@@ -1,0 +1,224 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { LuUsers, LuTimer, LuCircleCheck, LuTriangleAlert } from 'react-icons/lu';
+
+import KioskShell from '../components/kiosk/KioskShell';
+import StaffCard from '../components/kiosk/StaffCard';
+import PunchDialog from '../components/kiosk/PunchDialog';
+import Spinner from '../components/ui/Spinner';
+import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
+import { useGeoFence } from '../hooks/useGeoFence';
+import { useNow } from '../hooks/useNow';
+import { getBranch } from '../config/branches';
+import { subscribeBranchStaff } from '../services/staff.service';
+import { subscribeDayBoard } from '../services/attendance.service';
+import { readKioskSession, closeKioskSession, touchKioskSession } from '../services/kioskSession';
+import { lockKiosk } from '../services/verification.service';
+import { businessDayKey, minutesBetween, ATTENDANCE_STATUS } from '../lib/time';
+
+/**
+ * The shop-floor screen. One tablet, the whole roster, tap your name.
+ *
+ * Everything on this page is live: the roster, today's punches and the location
+ * fix all stream, so two people clocking in on two devices see each other's
+ * state immediately and nobody double-punches.
+ */
+export default function KioskPage() {
+  const { branchId } = useParams();
+  const navigate = useNavigate();
+  const { setBranch } = useBranchTheme();
+
+  const branch = useMemo(() => getBranch(branchId), [branchId]);
+  const now = useNow(30_000);
+  const dayKey = useMemo(
+    () => (branch ? businessDayKey(now, branch.timezone) : null),
+    [branch, now],
+  );
+
+  const [staff, setStaff] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+
+  const geo = useGeoFence(branch, { enabled: Boolean(branch) });
+
+  /* ---- kiosk session guard ---- */
+  useEffect(() => {
+    const session = readKioskSession();
+    if (!session || session.expired || session.branchId !== branchId) {
+      navigate('/attendance/kiosk', { replace: true });
+    }
+  }, [branchId, navigate, now]);
+
+  /* Any interaction pushes back the idle lock. */
+  useEffect(() => {
+    const touch = () => touchKioskSession();
+    window.addEventListener('pointerdown', touch);
+    return () => window.removeEventListener('pointerdown', touch);
+  }, []);
+
+  useEffect(() => {
+    setBranch(branch?.theme ?? HOUSE_THEME);
+  }, [branch, setBranch]);
+
+  /* ---- live data ---- */
+  useEffect(() => {
+    if (!branchId) return undefined;
+    return subscribeBranchStaff(branchId, setStaff, (error) => {
+      setStaff([]);
+      setLoadError(error?.message ?? 'Could not load the roster.');
+    });
+  }, [branchId]);
+
+  useEffect(() => {
+    if (!branchId || !dayKey) return undefined;
+    return subscribeDayBoard(branchId, dayKey, setLogs, () => setLogs([]));
+  }, [branchId, dayKey]);
+
+  const logsById = useMemo(() => {
+    const map = new Map();
+    for (const log of logs) map.set(log.staffId, log);
+    return map;
+  }, [logs]);
+
+  const summary = useMemo(() => {
+    const roster = staff ?? [];
+    let onShift = 0;
+    let finished = 0;
+    let late = 0;
+    let overtimeMinutes = 0;
+
+    for (const person of roster) {
+      const log = logsById.get(person.id);
+      if (!log?.checkIn?.at) continue;
+      if (log.checkOut?.at) {
+        finished += 1;
+        overtimeMinutes += log.minutes?.overtime ?? 0;
+      } else {
+        onShift += 1;
+      }
+      if (log.status === ATTENDANCE_STATUS.LATE) late += 1;
+    }
+
+    return {
+      headcount: roster.length,
+      onShift,
+      finished,
+      late,
+      notIn: roster.length - onShift - finished,
+      overtimeMinutes,
+    };
+  }, [staff, logsById]);
+
+  const lock = useCallback(async () => {
+    closeKioskSession();
+    /* Also drop the branch-scoped Firebase token, or the tablet keeps its
+       Firestore read access after the screen says it is locked. */
+    await lockKiosk();
+    navigate('/attendance/kiosk', { replace: true });
+  }, [navigate]);
+
+  if (!branch) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-surface px-6 text-center">
+        <div>
+          <p className="text-lg font-bold text-ink">Unknown branch</p>
+          <button
+            type="button"
+            onClick={() => navigate('/attendance/kiosk')}
+            className="mt-4 rounded-2xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-brand-on"
+          >
+            Choose a shop
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const selectedLog = selected ? logsById.get(selected.id) ?? null : null;
+
+  return (
+    <KioskShell branch={branch} geo={geo} onLock={lock}>
+      {/* ---- at-a-glance strip ---- */}
+      <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Tile icon={LuUsers} label="On the roster" value={summary.headcount} />
+        <Tile icon={LuCircleCheck} label="On shift now" value={summary.onShift} tone="ok" />
+        <Tile icon={LuTriangleAlert} label="Late today" value={summary.late} tone={summary.late ? 'warn' : null} />
+        <Tile
+          icon={LuTimer}
+          label="Overtime today"
+          value={summary.overtimeMinutes ? `${Math.round((summary.overtimeMinutes / 60) * 10) / 10}h` : '0h'}
+          tone={summary.overtimeMinutes ? 'ot' : null}
+        />
+      </section>
+
+      <h2 className="mb-3 px-1 text-sm font-bold tracking-tight text-ink">
+        Tap your name to clock {summary.onShift ? 'in or out' : 'in'}
+      </h2>
+
+      {staff === null ? (
+        <div className="py-20">
+          <Spinner size={26} label="Loading the roster…" />
+        </div>
+      ) : staff.length === 0 ? (
+        <div className="card card-pad text-center">
+          <p className="text-sm font-semibold text-ink">No staff on this branch yet</p>
+          <p className="mt-1 text-xs text-ink-muted">
+            {loadError ?? 'An administrator can add people from the admin dashboard.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {staff.map((person, index) => {
+            const log = logsById.get(person.id) ?? null;
+            const elapsed =
+              log?.checkIn?.at && !log?.checkOut?.at
+                ? minutesBetween(log.checkIn.at, now)
+                : null;
+            return (
+              <div key={person.id} style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }} className="animate-fade-up">
+                <StaffCard
+                  staff={person}
+                  log={log}
+                  timezone={branch.timezone}
+                  elapsedMinutes={elapsed}
+                  onSelect={setSelected}
+                  disabled={geo.pending}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <PunchDialog
+        open={Boolean(selected)}
+        onClose={() => setSelected(null)}
+        staff={selected}
+        log={selectedLog}
+        branch={branch}
+        geo={geo}
+      />
+    </KioskShell>
+  );
+}
+
+const TONES = {
+  ok: 'text-ok-ink bg-ok-soft',
+  warn: 'text-warn-ink bg-warn-soft',
+  ot: 'text-ot-ink bg-ot-soft',
+};
+
+function Tile({ icon: Icon, label, value, tone }) {
+  return (
+    <div className="glass glass-sheen rounded-3xl p-4 shadow-soft">
+      <span
+        className={`mb-3 grid h-9 w-9 place-items-center rounded-xl ${TONES[tone] ?? 'bg-surface-sunken text-ink-subtle'}`}
+      >
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <p className="text-2xl font-bold leading-none tracking-tight text-ink">{value}</p>
+      <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">{label}</p>
+    </div>
+  );
+}

@@ -281,12 +281,11 @@
     -webkit-text-size-adjust: 100%;
   }
 
-  body {
-    @apply bg-surface text-ink font-sans antialiased;
-    /* Branch swaps shouldn't snap; they should resolve. */
-    transition: background-color 400ms cubic-bezier(0.16, 1, 0.3, 1),
-                color 400ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
+  /* NOTE: the token palette is deliberately NOT applied to <body>.
+     This project also serves a public storefront that knows nothing about
+     branch themes, and painting the body would drag it into dark mode the
+     moment someone toggled the kiosk. The attendance app opts in through
+     .attendance-root instead. */
 
   ::selection {
     background-color: rgb(var(--brand-500) / 0.22);
@@ -323,6 +322,14 @@
 }
 
 @layer components {
+  /* The attendance app's root element — the only place the token palette is
+     applied to a page surface. */
+  .attendance-root {
+    @apply min-h-dvh bg-surface font-sans text-ink antialiased;
+    transition: background-color 400ms cubic-bezier(0.16, 1, 0.3, 1),
+                color 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
   /* The card everything on the dashboard is made of. */
   .card {
     @apply rounded-3xl border border-line bg-surface-card shadow-soft;

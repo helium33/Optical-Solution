@@ -29,10 +29,20 @@ export default [
       ...react.configs['jsx-runtime'].rules,
       ...reactHooks.configs.recommended.rules,
       'react/jsx-no-target-blank': 'off',
+      // This codebase does not use PropTypes anywhere (the package is not even
+      // a dependency), so react/prop-types from react/recommended only ever
+      // fires false positives. Types belong in JSDoc or TypeScript here.
+      'react/prop-types': 'off',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
       ],
     },
+  },
+  {
+    // The logic suite is bundled by esbuild and executed by node, not shipped
+    // to a browser, so it gets node globals.
+    files: ['src/**/__tests__/**/*.{js,jsx}'],
+    languageOptions: { globals: { ...globals.node } },
   },
 ]
