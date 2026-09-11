@@ -562,17 +562,45 @@ npm run test:logic            # 41 assertions
 npm run build
 ```
 
-Firebase project:
+Firebase project — currently pointed at **`ecommerce-f2834`**, shared with the
+storefront.
 
-1. **Authentication** → enable Google; add your domain to the authorised list.
-2. **Firestore** → `firebase deploy --only firestore:rules,firestore:indexes`.
-3. **Seed** → `seedBranches()` in `services/branches.service.js` writes the three
+1. **Authentication** → enable the Google provider. Add your deployed domain
+   under Authentication → Settings → Authorised domains (`localhost` is already
+   there).
+2. **Rules — do not blind-deploy.** `firebase deploy --only firestore:rules`
+   *replaces* the whole ruleset; it does not merge. That project already has
+   rules (an anonymous read is refused today), so deploying `firestore.rules`
+   as-is would discard them. Either merge this file's `match` blocks into the
+   project's existing rules, or give attendance its own Firebase project. The
+   header comment in `firestore.rules` spells out both routes.
+   Check for collection-name collisions first — this app writes `branches/`,
+   `staff/`, `attendance/`, `attendanceDaily/`, `auditLogs/`, and `branches` is
+   the one plausibly already taken by an ecommerce schema. Every path in the app
+   comes from `services/paths.js`, so renaming is a one-file change.
+3. **Indexes** → `firebase deploy --only firestore:indexes` (additive, safe).
+4. **Seed** → `seedBranches()` in `services/branches.service.js` writes the three
    branch documents from `config/branches.js`.
-4. **Replace the placeholder coordinates.** The lat/lng and CIDRs in
+5. **Replace the placeholder coordinates.** The lat/lng and CIDRs in
    `config/branches.js` are placeholders — stand in each shop doorway, read the
    device's own position, and write the real values.
-5. Set the kiosk and staff PINs through the Admin SDK (they must land in the
+6. Set the kiosk and staff PINs through the Admin SDK (they must land in the
    `secrets` subcollections, which no client can write).
+
+### On the web API key
+
+Firebase web config — API key included — is a public identifier, not a secret;
+it ships in every client bundle by design, and Google documents it as such. The
+security boundary is the rules and the callables, not the key.
+
+It is still worth restricting it: in Google Cloud Console → APIs & Services →
+Credentials, add an HTTP-referrer restriction for your domains. That stops the
+key being used to run up quota from someone else's site. It does not, and
+cannot, protect data — that is the rules' job.
+
+The values live in `.env`, which is gitignored. Nothing in this repository
+contains them, so a fresh clone (or a CI build, or a new machine) needs the file
+recreated or the variables set in the hosting provider's environment.
 
 ### Development without Cloud Functions
 
