@@ -38,7 +38,16 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
   const [pin, setPin] = useState('');
   const [overtime, setOvertime] = useState(false);
   const [error, setError] = useState(null);
-  const [result, setResult] = useState(null);
+  /**
+   * What this punch turned out to be, frozen at the moment it was sent.
+   *
+   * `isCheckOut` below is derived live from the log — which is correct while
+   * the dialog is being filled in, and wrong the instant the punch lands:
+   * the log gains a checkOut, the derivation flips, and the success panel
+   * relabels a clock-out as "Welcome in". The confirmation has to report what
+   * happened, not what the current state now implies.
+   */
+  const [submitted, setSubmitted] = useState(null);
 
   /* Reset every time the dialog opens for a different person. */
   useEffect(() => {
@@ -47,7 +56,7 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
     setPin('');
     setOvertime(false);
     setError(null);
-    setResult(null);
+    setSubmitted(null);
   }, [open, staff?.id]);
 
   /**
@@ -97,7 +106,15 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
           geo: { distance: geo.fence?.distance ?? null, verdict: geo.fence?.verdict ?? null },
           ip: geo.ip,
         });
-        setResult(response);
+        setSubmitted({
+          kind,
+          verb: kind === PUNCH.CHECK_OUT ? 'Clock out' : 'Clock in',
+          /* Snapshot the figures as agreed, so the confirmation and the
+             record can never disagree. */
+          workedMinutes: response?.computed?.workedMinutes ?? preview?.workedMinutes ?? null,
+          overtimeMinutes: response?.computed?.overtimeMinutes ?? preview?.overtimeMinutes ?? 0,
+          at: new Date(),
+        });
         setStep(STEP.DONE);
         onSubmitted?.(response);
       } catch (submitError) {
@@ -106,7 +123,7 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
         setPin('');
       }
     },
-    [kind, branch, staff, overtime, geo, onSubmitted],
+    [kind, branch, staff, overtime, geo, preview, onSubmitted],
   );
 
   const onBiometric = useCallback(async () => {
@@ -149,15 +166,8 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
       subtitle={step === STEP.DONE ? null : formatClock(now, branch.timezone, { seconds: true })}
       size="md"
     >
-      {step === STEP.DONE ? (
-        <SuccessPanel
-          staff={staff}
-          verb={verb}
-          branch={branch}
-          result={result}
-          preview={preview}
-          at={now}
-        />
+      {step === STEP.DONE && submitted ? (
+        <SuccessPanel staff={staff} branch={branch} submitted={submitted} />
       ) : (
         <div className="space-y-5">
           {/* ---- who ---- */}
@@ -309,9 +319,8 @@ const Cell = ({ label, value }) => (
   </div>
 );
 
-function SuccessPanel({ staff, verb, branch, result, preview, at }) {
-  const granted = result?.computed?.overtimeMinutes ?? preview?.overtimeMinutes ?? 0;
-  const worked = result?.computed?.workedMinutes ?? preview?.workedMinutes ?? null;
+function SuccessPanel({ staff, branch, submitted }) {
+  const { verb, workedMinutes: worked, overtimeMinutes: granted, at } = submitted;
 
   return (
     <div className="py-4 text-center animate-scale-in">

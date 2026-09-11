@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "api": "json-server --watch nav.json --port 3001 -d 2000",
-    "test:logic": "esbuild src/Feature/Attendance/__tests__/logic.test.js --bundle --platform=node --format=esm --outfile=node_modules/.cache/attendance-logic.test.mjs --log-level=error && node node_modules/.cache/attendance-logic.test.mjs"
+    "test:logic": "esbuild src/Feature/Attendance/__tests__/logic.test.js --bundle --platform=node --format=esm --outfile=node_modules/.cache/attendance-logic.test.mjs --log-level=error && node node_modules/.cache/attendance-logic.test.mjs",
+    "preview:build": "vite build --config vite.preview.config.js",
+    "preview:dev": "vite --config vite.preview.config.js"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
