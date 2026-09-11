@@ -584,8 +584,59 @@ storefront.
 5. **Replace the placeholder coordinates.** The lat/lng and CIDRs in
    `config/branches.js` are placeholders — stand in each shop doorway, read the
    device's own position, and write the real values.
-6. Set the kiosk and staff PINs through the Admin SDK (they must land in the
-   `secrets` subcollections, which no client can write).
+6. **Set the PINs** — `npm run seed:pins`. It prompts for each branch PIN with
+   the input hidden, hashes it with PBKDF2 (210 000 iterations, unique salt),
+   and writes only the hash to `branches/{id}/secrets/kiosk`. Add `--branches`
+   to (re)write the branch config documents in the same run, `--dry-run` to see
+   what would change without touching anything, and `--staff` with
+   `SEED_STAFF_PINS='{"staffId":"1234"}'` for personal PINs.
+
+   Needs Admin credentials, because `secrets/` is denied to every client:
+   `export GOOGLE_APPLICATION_CREDENTIALS=./service-account.json`
+
+### Where a PIN may and may not live
+
+**This repository is public, and git history is permanent.** A PIN committed
+once is a PIN leaked forever, whatever a later commit does. The same goes for
+anything compiled into the preview bundle, which is published at a URL.
+
+So there is exactly one home for a PIN: a PBKDF2 hash in a `secrets`
+subcollection, put there by `scripts/seed-pins.mjs`. Not a config file, not an
+`.env`, not a constant in `branches.js`, not the preview fixtures.
+
+The script prompts rather than reading a file or a command-line argument,
+because both of those leak: an argument lands in shell history, and a file is
+one `git add -A` away from the public internet. `SEED_PIN_*` environment
+variables are honoured for unattended runs.
+
+The preview's branch PIN defaults to `1234` — a demo value for demo data. To
+rehearse with the real ones locally without committing them:
+
+```bash
+PREVIEW_PIN_WIN=… PREVIEW_PIN_PWINT=… PREVIEW_PIN_YANGON=… npm run preview:dev
+```
+
+### How much a weak PIN actually costs
+
+The script warns on repeated digits (`1111`), running sequences, and the case
+where several branches share a shape — learn one, guess the rest. It warns and
+proceeds; the shop owner knows their shop.
+
+What keeps a weak branch PIN survivable is worth stating, because it decides
+how much the warning matters:
+
+- The hash is never readable by a client, so there is nothing to grind offline.
+- Each derivation costs ~110 ms, so even *with* the hash, 10 000 four-digit
+  candidates is ~18 minutes of compute.
+- `verifyBranchPin` must rate-limit per branch and per IP. This is the real
+  control, and it is the one thing on this list that is not already built —
+  see §9.
+- A branch PIN only opens the roster. Every punch still needs a personal PIN or
+  fingerprint **and** a GPS fix inside 50 m.
+
+So the exposure from a guessed branch PIN is: someone sees that shop's staff
+list and today's attendance. Not nothing — it is employee data — but not a
+route to logging false hours. Six digits would close most of it for free.
 
 ### On the web API key
 

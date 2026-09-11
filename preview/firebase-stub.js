@@ -203,9 +203,23 @@ const notDeployed = (name) => {
   return error;
 };
 
+/**
+ * Demo PINs for the preview only.
+ *
+ * These are NOT the shops' real PINs and must never be. The preview gets built
+ * into a bundle that is published at a URL, and this repository is public — a
+ * real PIN placed here would be readable by anyone who found either. Real PINs
+ * live only as PBKDF2 hashes in Firestore, put there by scripts/seed-pins.mjs.
+ *
+ * To rehearse with the real ones on your own machine, without committing them:
+ *   PREVIEW_PIN_WIN=… PREVIEW_PIN_PWINT=… npm run preview:dev
+ */
+const PREVIEW_PINS = JSON.parse(__PREVIEW_PINS__);
+
 export const httpsCallable = (fns, name) => async (payload) => {
   if (name === 'verifyBranchPin') {
-    return payload?.pin === '1234'
+    const expected = PREVIEW_PINS[payload?.branchId] ?? '1234';
+    return payload?.pin === expected
       ? { data: { ok: true, ttlMinutes: 840 } }   // no token -> no sign-in attempt
       : { data: { ok: false, reason: 'wrong-pin' } };
   }

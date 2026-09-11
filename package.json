@@ -11,7 +11,8 @@
     "api": "json-server --watch nav.json --port 3001 -d 2000",
     "test:logic": "esbuild src/Feature/Attendance/__tests__/logic.test.js --bundle --platform=node --format=esm --outfile=node_modules/.cache/attendance-logic.test.mjs --log-level=error && node node_modules/.cache/attendance-logic.test.mjs",
     "preview:build": "vite build --config vite.preview.config.js",
-    "preview:dev": "vite --config vite.preview.config.js"
+    "preview:dev": "vite --config vite.preview.config.js",
+    "seed:pins": "node scripts/seed-pins.mjs"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
@@ -38,6 +39,7 @@
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
+    "firebase-admin": "^14.4.0",
     "globals": "^15.14.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",

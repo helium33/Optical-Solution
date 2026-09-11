@@ -106,10 +106,14 @@ export default function AdminLoginPage() {
                 <LuShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-ink" aria-hidden="true" />
                 <div className="min-w-0 text-xs leading-relaxed text-ink-muted">
                   <p className="font-semibold text-ink">Restricted to {allowlist.length} accounts</p>
+                  {/* Masked. This page is on the public internet, and three
+                      personal addresses printed in full is a spam list waiting
+                      to be scraped. Enough is shown for an owner to recognise
+                      their own account, which is all the list is for. */}
                   <ul className="mt-1.5 space-y-0.5">
                     {allowlist.map((email) => (
                       <li key={email} className="truncate font-medium text-ink-subtle">
-                        {email}
+                        {maskEmail(email)}
                       </li>
                     ))}
                   </ul>
@@ -129,6 +133,14 @@ export default function AdminLoginPage() {
       </div>
     </div>
   );
+}
+
+/** `kyawwinhtun564@gmail.com` -> `kya•••••••••64@gmail.com` */
+function maskEmail(email) {
+  const [local, domain] = String(email).split('@');
+  if (!domain) return email;
+  if (local.length <= 5) return `${local[0]}${'•'.repeat(4)}@${domain}`;
+  return `${local.slice(0, 3)}${'•'.repeat(Math.max(3, local.length - 5))}${local.slice(-2)}@${domain}`;
 }
 
 /** Google's mark, inline so the page has no third-party asset dependency. */

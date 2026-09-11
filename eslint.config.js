@@ -45,4 +45,19 @@ export default [
     files: ['src/**/__tests__/**/*.{js,jsx}'],
     languageOptions: { globals: { ...globals.node } },
   },
+  {
+    // Preview scaffolding. __PREVIEW_PINS__ is substituted at build time by
+    // vite.preview.config.js, so it is a global as far as the linter is
+    // concerned.
+    files: ['preview/**/*.{js,jsx}'],
+    languageOptions: { globals: { __PREVIEW_PINS__: 'readonly' } },
+  },
+  {
+    // Operator scripts run under node.
+    files: ['scripts/**/*.{js,mjs}'],
+    languageOptions: {
+      globals: { ...globals.node },
+      parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+    },
+  },
 ]
