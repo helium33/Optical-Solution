@@ -1,3 +1,339 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BRANCH THEME TOKENS
+
+   Every value is a bare RGB triplet so Tailwind's `<alpha-value>` keeps working
+   (see tailwind.config.js). Eight palettes live here — four branches x two
+   modes — and nothing else in the app knows a hex code.
+
+   Selector layering (both attributes sit on <html>):
+     :root                       house light   (admin / "All branches")
+     [data-branch="win"]         win light
+     .dark                       house dark
+     .dark[data-branch="win"]    win dark      (0,2,0 — beats both singles)
+
+   Each block re-declares the *complete* token set. Verbose on purpose: a
+   partially-declared branch would silently inherit a neighbour's surface and
+   the bug would only show up in one mode, at one branch, in one shop.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  /* ─────────────────────────── HOUSE · LIGHT ─────────────────────────────
+     The neutral indigo used by the admin dashboard before a branch filter is
+     applied. Picking a branch swaps the whole shell to that branch's palette. */
+  :root {
+    --brand-50: 238 242 255;   --brand-100: 224 231 255;  --brand-200: 199 210 254;
+    --brand-300: 165 180 252;  --brand-400: 129 140 248;  --brand-500: 99 102 241;
+    --brand-600: 79 70 229;    --brand-700: 67 56 202;    --brand-800: 55 48 163;
+    --brand-900: 49 46 129;    --brand-950: 30 27 75;
+    --brand-ink: 67 56 202;    --brand-on: 255 255 255;
+
+    --accent-50: 236 254 255;  --accent-100: 207 250 254; --accent-200: 165 243 252;
+    --accent-300: 103 232 249; --accent-400: 34 211 238;  --accent-500: 6 182 212;
+    --accent-600: 8 145 178;   --accent-700: 14 116 144;  --accent-800: 21 94 117;
+    --accent-900: 22 78 99;    --accent-950: 8 51 68;
+    --accent-ink: 14 116 144;  --accent-on: 255 255 255;
+
+    --surface: 246 247 251;    --surface-card: 255 255 255;
+    --surface-raised: 255 255 255; --surface-sunken: 236 238 245;
+    --ink: 15 18 34;           --ink-muted: 74 80 104;    --ink-subtle: 138 144 166;
+    --line: 228 231 239;       --line-strong: 204 209 222;
+    --shadow: 15 18 34;
+
+    --glass: 255 255 255;      --glass-alpha: 0.72;
+    --glass-line: 15 18 34;    --glass-line-alpha: 0.07;  --sheen-alpha: 0.10;
+
+    color-scheme: light;
+  }
+
+  /* ──────────────────────────── WIN · LIGHT ──────────────────────────────
+     Deep navy #211c51 anchored at step 900, orange accent. Shadows are tinted
+     navy rather than grey — the cheapest way to make a theme feel authored. */
+  [data-branch='win'] {
+    --brand-50: 242 242 248;   --brand-100: 227 227 241;  --brand-200: 199 199 227;
+    --brand-300: 163 163 208;  --brand-400: 123 120 184;  --brand-500: 91 87 160;
+    --brand-600: 69 65 127;    --brand-700: 52 48 101;    --brand-800: 42 37 90;
+    --brand-900: 33 28 81;     --brand-950: 21 18 51;
+    --brand-ink: 42 37 90;     --brand-on: 255 255 255;
+
+    --accent-50: 255 245 237;  --accent-100: 255 232 212; --accent-200: 255 205 168;
+    --accent-300: 255 171 113; --accent-400: 255 125 56;  --accent-500: 249 93 18;
+    --accent-600: 234 67 8;    --accent-700: 194 47 9;    --accent-800: 154 39 16;
+    --accent-900: 124 35 16;   --accent-950: 67 14 6;
+    --accent-ink: 194 47 9;    --accent-on: 255 255 255;
+
+    --surface: 244 244 250;    --surface-card: 255 255 255;
+    --surface-raised: 255 255 255; --surface-sunken: 234 234 245;
+    --ink: 22 19 47;           --ink-muted: 77 74 114;    --ink-subtle: 139 136 168;
+    --line: 226 226 238;       --line-strong: 201 201 222;
+    --shadow: 33 28 81;
+
+    --glass: 255 255 255;      --glass-alpha: 0.70;
+    --glass-line: 33 28 81;    --glass-line-alpha: 0.08;  --sheen-alpha: 0.10;
+
+    color-scheme: light;
+  }
+
+  /* ─────────────────────────── PWINT · LIGHT ─────────────────────────────
+     A white shop. The brand ramp is fuchsia and the surfaces stay paper-white;
+     colour arrives only where it is doing a job. */
+  [data-branch='pwint'] {
+    --brand-50: 253 244 255;   --brand-100: 250 232 255;  --brand-200: 245 208 254;
+    --brand-300: 240 171 252;  --brand-400: 232 121 249;  --brand-500: 217 70 239;
+    --brand-600: 192 38 211;   --brand-700: 162 28 175;   --brand-800: 134 25 143;
+    --brand-900: 112 26 117;   --brand-950: 74 4 78;
+    --brand-ink: 162 28 175;   --brand-on: 255 255 255;
+
+    --accent-50: 253 242 248;  --accent-100: 252 231 243; --accent-200: 251 207 232;
+    --accent-300: 249 168 212; --accent-400: 244 114 182; --accent-500: 236 72 153;
+    --accent-600: 219 39 119;  --accent-700: 190 24 93;   --accent-800: 157 23 77;
+    --accent-900: 131 24 67;   --accent-950: 80 7 36;
+    --accent-ink: 190 24 93;   --accent-on: 255 255 255;
+
+    --surface: 253 251 253;    --surface-card: 255 255 255;
+    --surface-raised: 255 255 255; --surface-sunken: 248 241 249;
+    --ink: 27 15 30;           --ink-muted: 93 74 98;     --ink-subtle: 150 137 154;
+    --line: 240 230 242;       --line-strong: 224 207 228;
+    --shadow: 74 4 78;
+
+    --glass: 255 255 255;      --glass-alpha: 0.74;
+    --glass-line: 74 4 78;     --glass-line-alpha: 0.07;  --sheen-alpha: 0.10;
+
+    color-scheme: light;
+  }
+
+  /* ─────────────────────────── YANGON · LIGHT ────────────────────────────
+     Red theme, white accent. A white accent cannot be read as *text* on a
+     white page, so --accent-ink falls back to brand red; --accent-on is the
+     dark red that sits on top of an ivory accent fill. The white accent does
+     its real work on red-filled panels. */
+  [data-branch='yangon'] {
+    --brand-50: 254 242 242;   --brand-100: 254 226 226;  --brand-200: 254 202 202;
+    --brand-300: 252 165 165;  --brand-400: 248 113 113;  --brand-500: 239 68 68;
+    --brand-600: 220 38 38;    --brand-700: 185 28 28;    --brand-800: 153 27 27;
+    --brand-900: 127 29 29;    --brand-950: 69 10 10;
+    --brand-ink: 185 28 28;    --brand-on: 255 255 255;
+
+    --accent-50: 255 255 255;  --accent-100: 255 250 250; --accent-200: 255 241 239;
+    --accent-300: 255 228 224; --accent-400: 247 211 204; --accent-500: 233 188 180;
+    --accent-600: 201 158 149; --accent-700: 163 122 113; --accent-800: 124 89 82;
+    --accent-900: 90 62 57;    --accent-950: 51 31 28;
+    --accent-ink: 185 28 28;   --accent-on: 127 29 29;
+
+    --surface: 253 246 245;    --surface-card: 255 255 255;
+    --surface-raised: 255 255 255; --surface-sunken: 251 235 233;
+    --ink: 32 13 12;           --ink-muted: 109 74 71;    --ink-subtle: 163 134 131;
+    --line: 245 222 219;       --line-strong: 235 196 192;
+    --shadow: 69 10 10;
+
+    --glass: 255 255 255;      --glass-alpha: 0.72;
+    --glass-line: 69 10 10;    --glass-line-alpha: 0.08;  --sheen-alpha: 0.10;
+
+    color-scheme: light;
+  }
+
+  /* ──────────────────────────── HOUSE · DARK ─────────────────────────────
+     Dark mode is *selected*, never an automatic inversion: each ramp is
+     re-stepped so the mid-tones stay legible against a near-black surface. */
+  .dark {
+    --brand-50: 238 242 255;   --brand-100: 224 231 255;  --brand-200: 199 210 254;
+    --brand-300: 165 180 252;  --brand-400: 129 140 248;  --brand-500: 99 102 241;
+    --brand-600: 79 70 229;    --brand-700: 67 56 202;    --brand-800: 55 48 163;
+    --brand-900: 49 46 129;    --brand-950: 30 27 75;
+    --brand-ink: 165 180 252;  --brand-on: 255 255 255;
+
+    --accent-50: 236 254 255;  --accent-100: 207 250 254; --accent-200: 165 243 252;
+    --accent-300: 103 232 249; --accent-400: 34 211 238;  --accent-500: 6 182 212;
+    --accent-600: 8 145 178;   --accent-700: 14 116 144;  --accent-800: 21 94 117;
+    --accent-900: 22 78 99;    --accent-950: 8 51 68;
+    --accent-ink: 103 232 249; --accent-on: 8 51 68;
+
+    --surface: 10 12 20;       --surface-card: 18 21 31;
+    --surface-raised: 26 30 43; --surface-sunken: 7 8 14;
+    --ink: 244 246 251;        --ink-muted: 166 173 196;  --ink-subtle: 111 119 147;
+    --line: 35 40 57;          --line-strong: 51 58 80;
+    --shadow: 0 0 0;
+
+    --glass: 255 255 255;      --glass-alpha: 0.05;
+    --glass-line: 255 255 255; --glass-line-alpha: 0.10;  --sheen-alpha: 0.55;
+
+    color-scheme: dark;
+  }
+
+  /* ───────────────────────────── WIN · DARK ──────────────────────────────
+     Navy-black rather than neutral black — the brand hue bleeds into the
+     surface so the shell still reads as "Win" with the lights off. */
+  .dark[data-branch='win'] {
+    --brand-50: 242 242 248;   --brand-100: 227 227 241;  --brand-200: 199 199 227;
+    --brand-300: 163 163 208;  --brand-400: 123 120 184;  --brand-500: 91 87 160;
+    --brand-600: 69 65 127;    --brand-700: 52 48 101;    --brand-800: 42 37 90;
+    --brand-900: 33 28 81;     --brand-950: 21 18 51;
+    --brand-ink: 163 163 208;  --brand-on: 255 255 255;
+
+    --accent-50: 255 245 237;  --accent-100: 255 232 212; --accent-200: 255 205 168;
+    --accent-300: 255 171 113; --accent-400: 255 125 56;  --accent-500: 249 93 18;
+    --accent-600: 234 67 8;    --accent-700: 194 47 9;    --accent-800: 154 39 16;
+    --accent-900: 124 35 16;   --accent-950: 67 14 6;
+    --accent-ink: 255 171 113; --accent-on: 67 14 6;
+
+    --surface: 10 9 24;        --surface-card: 20 18 43;
+    --surface-raised: 28 25 64; --surface-sunken: 6 5 18;
+    --ink: 242 241 250;        --ink-muted: 169 166 200;  --ink-subtle: 114 111 150;
+    --line: 39 35 72;          --line-strong: 56 51 99;
+    --shadow: 0 0 0;
+
+    --glass: 255 255 255;      --glass-alpha: 0.06;
+    --glass-line: 199 199 227; --glass-line-alpha: 0.12;  --sheen-alpha: 0.55;
+
+    color-scheme: dark;
+  }
+
+  /* ──────────────────────────── PWINT · DARK ─────────────────────────────
+     The white shop inverted: plum-black surfaces keeping the fuchsia identity. */
+  .dark[data-branch='pwint'] {
+    --brand-50: 253 244 255;   --brand-100: 250 232 255;  --brand-200: 245 208 254;
+    --brand-300: 240 171 252;  --brand-400: 232 121 249;  --brand-500: 217 70 239;
+    --brand-600: 192 38 211;   --brand-700: 162 28 175;   --brand-800: 134 25 143;
+    --brand-900: 112 26 117;   --brand-950: 74 4 78;
+    --brand-ink: 240 171 252;  --brand-on: 255 255 255;
+
+    --accent-50: 253 242 248;  --accent-100: 252 231 243; --accent-200: 251 207 232;
+    --accent-300: 249 168 212; --accent-400: 244 114 182; --accent-500: 236 72 153;
+    --accent-600: 219 39 119;  --accent-700: 190 24 93;   --accent-800: 157 23 77;
+    --accent-900: 131 24 67;   --accent-950: 80 7 36;
+    --accent-ink: 249 168 212; --accent-on: 80 7 36;
+
+    --surface: 12 7 14;        --surface-card: 23 16 26;
+    --surface-raised: 32 21 36; --surface-sunken: 8 4 9;
+    --ink: 250 245 251;        --ink-muted: 192 169 198;  --ink-subtle: 139 118 145;
+    --line: 43 29 48;          --line-strong: 61 42 67;
+    --shadow: 0 0 0;
+
+    --glass: 255 255 255;      --glass-alpha: 0.06;
+    --glass-line: 245 208 254; --glass-line-alpha: 0.12;  --sheen-alpha: 0.55;
+
+    color-scheme: dark;
+  }
+
+  /* ─────────────────────────── YANGON · DARK ─────────────────────────────
+     In the dark the white accent finally gets to be literally white. */
+  .dark[data-branch='yangon'] {
+    --brand-50: 254 242 242;   --brand-100: 254 226 226;  --brand-200: 254 202 202;
+    --brand-300: 252 165 165;  --brand-400: 248 113 113;  --brand-500: 239 68 68;
+    --brand-600: 220 38 38;    --brand-700: 185 28 28;    --brand-800: 153 27 27;
+    --brand-900: 127 29 29;    --brand-950: 69 10 10;
+    --brand-ink: 252 165 165;  --brand-on: 255 255 255;
+
+    --accent-50: 255 255 255;  --accent-100: 255 250 250; --accent-200: 255 241 239;
+    --accent-300: 255 228 224; --accent-400: 247 211 204; --accent-500: 233 188 180;
+    --accent-600: 201 158 149; --accent-700: 163 122 113; --accent-800: 124 89 82;
+    --accent-900: 90 62 57;    --accent-950: 51 31 28;
+    --accent-ink: 255 255 255; --accent-on: 127 29 29;
+
+    --surface: 15 7 6;         --surface-card: 26 14 13;
+    --surface-raised: 37 20 19; --surface-sunken: 9 4 3;
+    --ink: 253 243 242;        --ink-muted: 208 169 165;  --ink-subtle: 152 115 111;
+    --line: 51 27 25;          --line-strong: 71 38 36;
+    --shadow: 0 0 0;
+
+    --glass: 255 255 255;      --glass-alpha: 0.06;
+    --glass-line: 254 202 202; --glass-line-alpha: 0.12;  --sheen-alpha: 0.55;
+
+    color-scheme: dark;
+  }
+
+  /* ──────────────────── FIXED SEMANTICS (never themed) ───────────────────
+     "Late" must not turn fuchsia at Pwint. These four ride above the branch
+     palette and are declared once per mode.
+     Status colour never carries meaning alone — every use ships an icon and a
+     text label (see StatusPill). */
+  :root {
+    --ok: 12 163 12;        --ok-ink: 0 99 0;        --ok-soft: 230 246 230;
+    --warn: 250 178 25;     --warn-ink: 138 90 0;    --warn-soft: 255 244 221;
+    --danger: 208 59 59;    --danger-ink: 165 32 32; --danger-soft: 253 234 234;
+    --ot: 235 104 52;       --ot-ink: 184 68 26;     --ot-soft: 255 238 230;
+
+    /* Data-viz series. Validated blue/orange pair — see the architecture doc. */
+    --viz-1: 42 120 214;
+    --viz-2: 235 104 52;
+    --viz-muted: 137 135 129;
+    /* Chart chrome follows the branch so plots sit inside their theme. */
+    --viz-grid: var(--line);
+    --viz-axis: var(--line-strong);
+  }
+
+  .dark {
+    --ok: 12 163 12;        --ok-ink: 12 163 12;     --ok-soft: 15 42 18;
+    --warn: 250 178 25;     --warn-ink: 250 178 25;  --warn-soft: 46 36 16;
+    --danger: 208 59 59;    --danger-ink: 230 103 103; --danger-soft: 46 20 20;
+    --ot: 217 89 38;        --ot-ink: 255 157 92;    --ot-soft: 47 26 16;
+
+    --viz-1: 57 135 229;
+    --viz-2: 217 89 38;
+    --viz-muted: 137 135 129;
+  }
+
+  /* ───────────────────────────── Base styles ──────────────────────────── */
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface text-ink font-sans antialiased;
+    /* Branch swaps shouldn't snap; they should resolve. */
+    transition: background-color 400ms cubic-bezier(0.16, 1, 0.3, 1),
+                color 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  ::selection {
+    background-color: rgb(var(--brand-500) / 0.22);
+  }
+
+  /* One focus ring for the whole app, in the branch's hue. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    @apply outline-none ring-2 ring-brand-500/70 ring-offset-2;
+    --tw-ring-offset-color: rgb(var(--surface));
+  }
+
+  /* Numbers that sit in columns must align; standalone display figures must not. */
+  th, td, .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--line-strong));
+    border-radius: 9999px;
+    border: 3px solid rgb(var(--surface));
+  }
+  ::-webkit-scrollbar-thumb:hover { background-color: rgb(var(--ink-subtle)); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* The card everything on the dashboard is made of. */
+  .card {
+    @apply rounded-3xl border border-line bg-surface-card shadow-soft;
+  }
+
+  .card-pad {
+    @apply p-5 sm:p-6;
+  }
+
+  /* Label micro-type: the small uppercase key above a figure. */
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-subtle;
+  }
+}
