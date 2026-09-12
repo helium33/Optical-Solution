@@ -753,6 +753,26 @@ npm run test:logic            # 41 assertions
 npm run build
 ```
 
+### Hosting: deep links need a rewrite
+
+`firebase.json` rewrites every unmatched path to `/index.html`. Without it the
+app works only from the root: refreshing on `/attendance/kiosk`, bookmarking it,
+or following a link straight to it asks the host for a file that does not exist
+and gets a 404. Client-side routing only ever sees a URL the host agreed to
+serve.
+
+For the same reason, navigation inside the app uses React Router `<Link>`, never
+a raw `<a href>`. An anchor is a full page load — it leaves the app, asks the
+host for that path, and depends entirely on the rewrite being right.
+
+**`firestore.rules` is deliberately absent from `firebase.json`.** A bare
+`firebase deploy` would then replace the rules protecting the storefront in this
+shared project. Rules are deployed on purpose, by name, after merging — see the
+header of `firestore.rules`. Indexes are listed because they are additive and
+safe.
+
+---
+
 Firebase project — currently pointed at **`ecommerce-f2834`**, shared with the
 storefront.
 

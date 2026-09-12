@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   LuGlasses, LuLogOut, LuUsers, LuTimer, LuCircleAlert, LuExternalLink,
   LuNetwork,
@@ -131,13 +132,16 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          <a
-            href="/attendance/kiosk"
+          {/* Router Link, not an anchor. A raw href is a full page load, which
+              404s anywhere the host is not rewriting unknown paths to
+              index.html — and never resolves at all under a memory router. */}
+          <Link
+            to="/attendance/kiosk"
             className="hidden items-center gap-1.5 rounded-2xl border border-line px-3 py-2 text-xs font-semibold text-ink-muted transition-colors hover:text-ink sm:inline-flex"
           >
             Open kiosk
             <LuExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-          </a>
+          </Link>
 
           <Segmented
             size="sm"

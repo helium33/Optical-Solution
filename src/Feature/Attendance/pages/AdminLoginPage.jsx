@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { LuGlasses, LuShieldCheck, LuTriangleAlert, LuArrowRight } from 'react-icons/lu';
 
 import Spinner from '../components/ui/Spinner';
@@ -154,9 +154,9 @@ export default function AdminLoginPage() {
 
         <p className="mt-8 text-center text-xs text-ink-subtle">
           Shop staff do not sign in here —{' '}
-          <a href="/attendance/kiosk" className="font-semibold text-brand-ink hover:underline">
+          <Link to="/attendance/kiosk" className="font-semibold text-brand-ink hover:underline">
             open the kiosk
-          </a>
+          </Link>
           .
         </p>
       </div>
