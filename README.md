@@ -31,9 +31,35 @@ says, in plain words, that Firebase is not configured.
 | `npm run dev` | Vite dev server |
 | `npm run build` | Production build |
 | `npm run preview` | Serve the production build |
+| `npm run preview:dev` | The offline attendance preview, with sample data |
 | `npm run lint` | ESLint |
-| `npm run test:logic` | 41 assertions over the geofence, IP and overtime logic |
+| `npm run test:logic` | 46 assertions over the geofence, IP and overtime logic |
+| `npm run check:env` | Verify the environment is safe to deploy |
+| `npm run deploy:hosting` | Check env, build, deploy the site |
+| `npm run deploy:indexes` | Deploy Firestore indexes (additive, safe) |
 | `npm run api` | json-server for the storefront's `nav.json` |
+
+## Deploying
+
+The Firebase CLI ships as a dev dependency, so there is **no global install and
+nothing to add to your PATH**. On Windows this also sidesteps PowerShell
+refusing to run `firebase.ps1` under the default execution policy.
+
+```bash
+npm install              # brings the CLI with it
+npm run firebase -- login    # once, opens a browser
+npm run deploy:hosting
+```
+
+`deploy:hosting` refuses to build if the Firebase config is missing, or if a
+development bypass (`VITE_DEV_MODE`, `VITE_ALLOW_CLIENT_PUNCH`) is still switched
+on — either would otherwise deploy silently and only be noticed by whoever opened
+the site.
+
+**Firestore rules are not deployed by these scripts, on purpose.** This project
+shares a Firebase project with the storefront, and `firebase deploy` replaces a
+project's entire ruleset rather than merging. See the header of
+`firestore.rules`.
 
 ## The attendance app
 
