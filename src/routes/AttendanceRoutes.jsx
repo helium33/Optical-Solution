@@ -51,6 +51,16 @@ const AttendanceRoutes = [
   },
   {
     /**
+     * No gate, on purpose. Its entire job is answering "why can't this tablet
+     * read anything" when the app itself cannot tell you — gating it behind
+     * the same permissions it exists to diagnose would be circular. It reads
+     * nothing sensitive: existence checks only, never a document's content.
+     */
+    path: 'diagnostics',
+    lazy: page(() => import('../Feature/Attendance/pages/DiagnosticsPage')),
+  },
+  {
+    /**
      * Hidden. Reachable only after the secret sequence has been typed — the
      * guard redirects anyone else straight back to the kiosk, so bookmarking
      * or guessing the URL reveals nothing either.

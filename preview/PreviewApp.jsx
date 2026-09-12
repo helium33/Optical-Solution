@@ -16,6 +16,7 @@ const KioskGatePage = lazy(() => import('../src/Feature/Attendance/pages/KioskGa
 const KioskPage = lazy(() => import('../src/Feature/Attendance/pages/KioskPage'));
 const AdminLoginPage = lazy(() => import('../src/Feature/Attendance/pages/AdminLoginPage'));
 const DashboardPreviewPage = lazy(() => import('../src/Feature/Attendance/pages/DashboardPreviewPage'));
+const DiagnosticsPage = lazy(() => import('../src/Feature/Attendance/pages/DiagnosticsPage'));
 const AdminDashboardPage = lazy(() => import('../src/Feature/Attendance/pages/AdminDashboardPage'));
 
 /**
@@ -101,6 +102,7 @@ export default function PreviewApp() {
                 <Route path="/" element={<Navigate to="/attendance/kiosk" replace />} />
                 <Route path="/attendance/kiosk" element={<KioskGatePage />} />
                 <Route path="/attendance/kiosk/:branchId" element={<KioskPage />} />
+                <Route path="/attendance/diagnostics" element={<DiagnosticsPage />} />
                 <Route path="/attendance/dashboard" element={<DashboardPreviewPage />} />
                 <Route path="/attendance/admin/login" element={<AdminLoginPage />} />
                 <Route

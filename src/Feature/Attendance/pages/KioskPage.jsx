@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LuUsers, LuTimer, LuCircleCheck, LuTriangleAlert } from 'react-icons/lu';
 
@@ -176,6 +176,14 @@ export default function KioskPage() {
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">
             {t(loadError ?? 'kiosk.noStaffHint')}
           </p>
+          {loadError === 'errors.rulesNotDeployed' ? (
+            <Link
+              to="/attendance/diagnostics"
+              className="mt-3 inline-block text-xs font-bold text-brand-ink hover:underline"
+            >
+              {t('kiosk.runDiagnostics')}
+            </Link>
+          ) : null}
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">

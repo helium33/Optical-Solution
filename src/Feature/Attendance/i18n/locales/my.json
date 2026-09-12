@@ -52,7 +52,8 @@
     "lockKiosk": "ဤတက်ဘလက်ကို ပိတ်မည်",
     "staffAttendance": "ဝန်ထမ်း အချိန်မှတ်တမ်း",
     "unknownBranch": "ဆိုင်ခွဲ မသိရှိပါ",
-    "fingerprintEnrolled": "လက်ဗွေ မှတ်ပုံတင်ပြီး"
+    "fingerprintEnrolled": "လက်ဗွေ မှတ်ပုံတင်ပြီး",
+    "runDiagnostics": "စစ်ဆေးရန် →"
   },
   "punch": {
     "enterPin": "သင့် PIN ကို ရိုက်ထည့်ပါ",

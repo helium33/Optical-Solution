@@ -133,6 +133,16 @@ whose name collides with yours (so it cannot redefine `isAdmin()` for the
 storefront), warns if both rulesets claim the same collection, and refuses to
 write a file that does not parse or that calls a helper nobody defines.
 
+**After publishing, open `/attendance/diagnostics` on the running app.** It is
+not a set of instructions to follow — it runs the actual checks: which Firebase
+project the bundle is pointed at, what identity the browser currently holds
+(signed out / anonymous / named, with its token claims), and a live read
+against every collection the kiosk needs, each with Firestore's exact error
+code. If a read still fails after publishing, this page says which collection
+and why, instead of the bare "Missing or insufficient permissions." the kiosk
+shows. It reads nothing sensitive — existence only, never a document's
+content.
+
 Neither `firestore.rules.existing` nor `firestore.rules.merged` is committed —
 they are your project's access control, and this repository is public.
 
@@ -205,7 +215,7 @@ predate the attendance app — not something you broke.
 | What you see | What it means |
 |---|---|
 | "Firebase is not configured" | No `.env`, or it is missing keys. Run `npm run setup:env`. |
-| "Missing or insufficient permissions" | The rules are not deployed. See 3b — `npm run merge:rules`. |
+| "Missing or insufficient permissions" | Open `/attendance/diagnostics` — it names the exact collection and cause. Usually: rules not deployed, or deployed to the wrong project. See 3b. |
 | Unlock fails, mentioning Anonymous sign-in | Authentication → Sign-in method → Anonymous → Enable. |
 | "That is not the PIN for this branch" | `VITE_DEV_BRANCH_PINS` is not set, so it is still expecting `1234`. |
 | "PIN checking is not set up on the server yet" | `VITE_ALLOW_CLIENT_PUNCH=true` is missing from `.env`. |

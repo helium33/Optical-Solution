@@ -52,7 +52,8 @@
     "lockKiosk": "Lock this kiosk",
     "staffAttendance": "Staff attendance",
     "unknownBranch": "Unknown branch",
-    "fingerprintEnrolled": "Fingerprint enrolled"
+    "fingerprintEnrolled": "Fingerprint enrolled",
+    "runDiagnostics": "Run diagnostics →"
   },
   "punch": {
     "enterPin": "Enter your PIN",

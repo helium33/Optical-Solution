@@ -182,6 +182,7 @@ export const doc = (db, name, id) => ({ __kind: 'doc', name, id });
 export const where = (field, op, value) => ({ type: 'where', field, op, value });
 export const orderBy = (field, direction = 'asc') => ({ type: 'orderBy', field, direction });
 export const documentId = () => '__name__';
+export const limit = (n) => ({ type: 'limit', n });
 export const serverTimestamp = () => new Date().toISOString();
 
 export const query = (ref, ...constraints) => ({
