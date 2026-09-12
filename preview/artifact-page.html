@@ -1,0 +1,81 @@
+<title>Optical Solution Attendance</title>
+
+<!-- The application's own stylesheet carries the full branch-token palette
+     (four branches x light/dark). This wrapper adds only what a hosted page
+     needs that a Vite index.html normally provides. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+  rel="stylesheet"
+/>
+<link rel="stylesheet" href="attendance-preview.css" />
+
+<style>
+  /* The viewer paints its own ground behind the artifact, so body needs an
+     explicit background or it borrows the host's theme. --surface comes from
+     the app's token set and is already correct for the active branch and mode
+     before a single line of JS has run. */
+  body {
+    background: rgb(var(--surface));
+    color: rgb(var(--ink));
+    min-height: 100dvh;
+  }
+
+  /* Shown until React mounts, then replaced. Better than a blank frame for
+     the ~300 kB the bundle has to parse on a cold load. */
+  .boot {
+    display: grid;
+    place-items: center;
+    min-height: 100dvh;
+    gap: 1rem;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  .boot-mark {
+    width: 3.25rem;
+    height: 3.25rem;
+    display: grid;
+    place-items: center;
+    border-radius: 1.25rem;
+    background: rgb(var(--brand-600));
+    color: rgb(var(--brand-on));
+    animation: boot-pulse 1.6s ease-in-out infinite;
+  }
+  .boot-text {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: rgb(var(--ink-subtle));
+    letter-spacing: 0.01em;
+  }
+  @keyframes boot-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(0.94); opacity: 0.72; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .boot-mark { animation: none; }
+  }
+</style>
+
+<div id="root">
+  <div class="boot">
+    <span class="boot-mark" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="6" cy="15" r="4" />
+        <circle cx="18" cy="15" r="4" />
+        <path d="M14 15a2 2 0 0 0-2-2 2 2 0 0 0-2 2" />
+        <path d="M2.5 13 5 7c.7-1.3 1.4-2 3-2" />
+        <path d="M21.5 13 19 7c-.7-1.3-1.5-2-3-2" />
+      </svg>
+    </span>
+    <p class="boot-text">Starting the attendance kiosk…</p>
+  </div>
+</div>
+
+<noscript>
+  <p style="padding: 2rem; font-family: system-ui, sans-serif">
+    This preview is a running application and needs JavaScript enabled.
+  </p>
+</noscript>
+
+<script type="module" src="attendance-preview.js"></script>

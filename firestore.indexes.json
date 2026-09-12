@@ -1,0 +1,43 @@
+{
+  "//": "Composite indexes for the queries in services/*.service.js. Deploy with `firebase deploy --only firestore:indexes`.",
+  "indexes": [
+    {
+      "//": "queryAttendance: branchId IN [...] + dayKey range + orderBy dayKey desc",
+      "collectionGroup": "attendance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "branchId", "order": "ASCENDING" },
+        { "fieldPath": "dayKey", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "subscribeDayBoard: branchId == x AND dayKey == y",
+      "collectionGroup": "attendance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "branchId", "order": "ASCENDING" },
+        { "fieldPath": "dayKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "subscribeBranchStaff: branchId == x AND active == true ORDER BY name",
+      "collectionGroup": "staff",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "branchId", "order": "ASCENDING" },
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "subscribeAllStaff: active == true ORDER BY name",
+      "collectionGroup": "staff",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -1,0 +1,208 @@
+rules_version = '2';
+
+/**
+ * ============================================================================
+ *  BEFORE YOU DEPLOY THIS FILE — READ THIS
+ *
+ *  `firebase deploy --only firestore:rules` REPLACES the project's entire
+ *  ruleset. It does not merge.
+ *
+ *  This app is pointed at the Firebase project `ecommerce-f2834`, which is
+ *  shared with the storefront and already has rules of its own (an
+ *  unauthenticated read is refused today, so something is protecting it).
+ *  Deploying this file as-is would throw those rules away and take the
+ *  storefront's data with them.
+ *
+ *  Do one of these instead:
+ *
+ *    A. MERGE — copy the `match /...` blocks below into the project's existing
+ *       rules file, inside its own `match /databases/{database}/documents`,
+ *       and deploy that one file. Firestore rules are OR-ed, so the existing
+ *       storefront blocks keep working unchanged.
+ *
+ *    B. SEPARATE PROJECT — create a second Firebase project just for
+ *       attendance and deploy this file there untouched. Cleaner blast radius,
+ *       separate billing, and staff attendance data never sits in the same
+ *       database as customer orders.  (Recommended if you have the appetite.)
+ *
+ *  Either way, check for collection-name collisions first. This app writes:
+ *      branches/   staff/   attendance/   attendanceDaily/   auditLogs/
+ *  `branches` is the one likely to clash with an ecommerce schema. If it does,
+ *  rename it in src/Feature/Attendance/services/paths.js — every path in the
+ *  app comes from that one file — and rename it here to match.
+ * ============================================================================
+ */
+
+/**
+ * Optical Solution — attendance security rules.
+ *
+ * THE RULE THIS FILE EXISTS TO ENFORCE: everything the client-side code checks,
+ * it checks for the user's benefit. Everything here, it checks for the
+ * business's. The React guards, the admin allowlist in auth/admins.js and the
+ * RBAC matrix are all bypassable from devtools. These are not.
+ *
+ * Two identities reach this database:
+ *
+ *   ADMIN   Google OAuth, one of three allowlisted addresses, ideally also
+ *           carrying an `admin: true` custom claim.
+ *   KIOSK   A shop tablet that entered the correct branch PIN and was handed a
+ *           short-lived custom token claiming { kiosk: true, branchId: 'win' }.
+ *           It can read its own branch and nothing else. It cannot write.
+ *
+ * Nobody writes attendance from a browser. Punches go through the `submitPunch`
+ * Cloud Function, which runs with Admin SDK privileges (bypassing these rules)
+ * after re-deriving the time, the request IP and the PIN/credential itself —
+ * none of which can be trusted from a client.
+ *
+ * SECRETS ARE SEPARATE DOCUMENTS, NOT HIDDEN FIELDS. Firestore rules are
+ * all-or-nothing per document: there is no way to serve a document while
+ * withholding one field. So every PIN hash and WebAuthn public key lives in a
+ * subcollection that denies all client access, rather than on the parent
+ * document where a single over-broad read rule would leak it.
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ─────────────────────────── identity ──────────────────────────── */
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function claims() {
+      return request.auth.token;
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        claims().admin == true
+        || (
+          claims().email_verified == true
+          && claims().email.lower() in [
+            'kyawwinhtun564@gmail.com',
+            'wpy.muse@gmail.com',
+            'yannaing190792@gmail.com'
+          ]
+        )
+      );
+    }
+
+    function isKiosk() {
+      return signedIn() && claims().kiosk == true;
+    }
+
+    function kioskBranch() {
+      return claims().branchId;
+    }
+
+    function isKioskFor(branchId) {
+      return isKiosk() && kioskBranch() == branchId;
+    }
+
+    /* ────────────────────────── branches ───────────────────────────── */
+
+    match /branches/{branchId} {
+      // The kiosk needs the geofence and shift for its own shop; the admin
+      // dashboard needs all three.
+      allow read: if isAdmin() || isKioskFor(branchId);
+      allow create, update: if isAdmin();
+      allow delete: if false;   // deactivate instead; history must resolve
+
+      // Kiosk PIN hash. No client, ever — only the Admin SDK.
+      match /secrets/{secretId} {
+        allow read, write: if false;
+      }
+    }
+
+    /* ──────────────────────────── staff ────────────────────────────── */
+
+    match /staff/{staffId} {
+      allow read: if isAdmin() || (isKiosk() && resource.data.branchId == kioskBranch());
+      allow create, update: if isAdmin() && staffShapeIsValid();
+
+      // Removing someone is `active: false` (an update, above), which keeps
+      // past logs resolving to a name. Hard delete is a separate, deliberate
+      // act — a duplicate entry, a test record, a data-protection request —
+      // and the UI puts it behind typing the person's name. Admin only.
+      allow delete: if isAdmin();
+
+      function staffShapeIsValid() {
+        let data = request.resource.data;
+        return data.branchId is string
+          && data.name is string
+          && data.name.size() > 0
+          && data.role in [
+            'supervisor', 'sales_leader', 'sales_executive', 'sales_associate'
+          ]
+          && data.active is bool
+          // Correcting a punch must not be able to smuggle a branch change
+          // past the rules: a person's branch is set on create and by an
+          // explicit role/branch edit, never as a side effect.
+          && (!('deactivatedAt' in data.keys()) || data.active == false || data.deactivatedAt == null)
+          // A PIN or credential must never arrive on the parent document, even
+          // from an admin — that is what the secrets subcollection is for.
+          && !data.keys().hasAny(['pin', 'pinHash', 'webauthn', 'credentials']);
+      }
+
+      // Personal PIN hash. Server-only.
+      match /secrets/{secretId} {
+        allow read, write: if false;
+      }
+
+      // WebAuthn public keys and signature counters. Server-only.
+      match /credentials/{credentialId} {
+        allow read, write: if false;
+      }
+    }
+
+    /* ────────────────────────── attendance ─────────────────────────── */
+
+    match /attendance/{logId} {
+      allow read: if isAdmin() || (isKiosk() && resource.data.branchId == kioskBranch());
+
+      // Punches are written by the submitPunch Cloud Function only.
+      //
+      // DEVELOPMENT: to run the app before deploying Functions (with
+      // VITE_ALLOW_CLIENT_PUNCH=true), temporarily replace the line below with
+      //     allow create, update: if isKiosk() && request.resource.data.branchId == kioskBranch();
+      // and put it back before going live. Records written that way are tagged
+      // verifiedBy: 'client-unverified' so they can be found and purged.
+      allow create: if false;
+
+      // Admins may correct a mis-punch and sign off overtime. The field list is
+      // closed: an amendment must not be able to rewrite whose log it is, which
+      // branch it belongs to or which day it falls on.
+      allow update: if isAdmin() && isAmendment();
+      allow delete: if false;
+
+      function isAmendment() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['checkIn', 'checkOut', 'status', 'minutes', 'overtime', 'edited', 'updatedAt'])
+          && request.resource.data.staffId == resource.data.staffId
+          && request.resource.data.branchId == resource.data.branchId
+          && request.resource.data.dayKey == resource.data.dayKey;
+      }
+    }
+
+    /* Roll-ups maintained by a Cloud Function trigger. Read-only to everyone. */
+    match /attendanceDaily/{docId} {
+      allow read: if isAdmin() || isKiosk();
+      allow write: if false;
+    }
+
+    /* ─────────────────────────── audit log ─────────────────────────── */
+
+    match /auditLogs/{entryId} {
+      // Append-only, and only from the server. An audit trail a client can
+      // write is an audit trail an attacker can write.
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    /* Anything not matched above is denied. */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

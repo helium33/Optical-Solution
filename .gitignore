@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# local environment
+.env
+.env.local
+
+# preview build output
+dist-preview

@@ -5,7 +5,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
-  { ignores: ['dist'] },
+  { ignores: ['dist', 'dist-preview'] },
   {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
@@ -29,10 +29,35 @@ export default [
       ...react.configs['jsx-runtime'].rules,
       ...reactHooks.configs.recommended.rules,
       'react/jsx-no-target-blank': 'off',
+      // This codebase does not use PropTypes anywhere (the package is not even
+      // a dependency), so react/prop-types from react/recommended only ever
+      // fires false positives. Types belong in JSDoc or TypeScript here.
+      'react/prop-types': 'off',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
       ],
+    },
+  },
+  {
+    // The logic suite is bundled by esbuild and executed by node, not shipped
+    // to a browser, so it gets node globals.
+    files: ['src/**/__tests__/**/*.{js,jsx}'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
+    // Preview scaffolding. __PREVIEW_PINS__ is substituted at build time by
+    // vite.preview.config.js, so it is a global as far as the linter is
+    // concerned.
+    files: ['preview/**/*.{js,jsx}'],
+    languageOptions: { globals: { __PREVIEW_PINS__: 'readonly' } },
+  },
+  {
+    // Operator scripts run under node.
+    files: ['scripts/**/*.{js,mjs}'],
+    languageOptions: {
+      globals: { ...globals.node },
+      parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
     },
   },
 ]
