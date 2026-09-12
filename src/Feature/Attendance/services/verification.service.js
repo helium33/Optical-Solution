@@ -48,7 +48,34 @@ const withTimeout = (promise, ms = CALL_TIMEOUT_MS) =>
   ]);
 
 const DEV_FALLBACK = import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true';
-const DEV_BRANCH_PIN = import.meta.env.VITE_DEV_BRANCH_PIN || '1234';
+
+/**
+ * Development PINs, per branch.
+ *
+ * `VITE_DEV_BRANCH_PINS=win:1111,pwint:2222,yangon:3333` gives each shop its
+ * real PIN while testing locally, so the tablet behaves the way it will once
+ * the Functions are deployed. Without this the whole point of three different
+ * PINs is lost the moment you run it on your own machine — you type the Win PIN
+ * at the Win kiosk, it is refused, and nothing on screen explains why.
+ *
+ * The values live in `.env`, which is gitignored. This repository is public and
+ * a branch PIN must never be committed to it.
+ *
+ * `VITE_DEV_BRANCH_PIN` stays supported as the single-PIN shorthand, and the
+ * whole thing falls back to 1234 so a fresh clone runs with no configuration.
+ */
+const DEV_BRANCH_PINS = (() => {
+  const map = {};
+  for (const pair of String(import.meta.env.VITE_DEV_BRANCH_PINS ?? '').split(',')) {
+    const [id, pin] = pair.split(':').map((part) => part?.trim());
+    if (id && pin) map[id] = pin;
+  }
+  return map;
+})();
+
+const DEV_SHARED_PIN = import.meta.env.VITE_DEV_BRANCH_PIN || '1234';
+
+const devPinFor = (branchId) => DEV_BRANCH_PINS[branchId] ?? DEV_SHARED_PIN;
 
 /**
  * @returns {Promise<{ok: boolean, reason?: string, ttlMinutes?: number}>}
@@ -68,7 +95,7 @@ export async function unlockKiosk(branchId, pin) {
         '[attendance] verifyBranchPin is not deployed — using the development PIN and an ' +
           'unauthenticated kiosk session. Never ship with VITE_ALLOW_CLIENT_PUNCH enabled.',
       );
-      if (pin !== DEV_BRANCH_PIN) return { ok: false, reason: 'wrong-pin' };
+      if (pin !== devPinFor(branchId)) return { ok: false, reason: 'wrong-pin' };
 
       /* Without SOME Firebase identity every Firestore read is refused and the
          kiosk shows an empty roster with "Missing or insufficient permissions".
@@ -96,7 +123,7 @@ export async function unlockKiosk(branchId, pin) {
          network — the fix is a deploy, not a better signal. */
       console.error(
         '[attendance] The verifyBranchPin function is not deployed. Deploy it, or set ' +
-          'VITE_ALLOW_CLIENT_PUNCH=true (with VITE_DEV_BRANCH_PIN) to test locally.',
+          'VITE_ALLOW_CLIENT_PUNCH=true (with VITE_DEV_BRANCH_PINS) to test locally.',
       );
       return { ok: false, reason: 'not-deployed' };
     }

@@ -1,0 +1,8 @@
+{
+  "//": "Suggested when the folder is opened. None are required to run the app.",
+  "recommendations": [
+    "bradlc.vscode-tailwindcss",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ]
+}

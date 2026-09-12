@@ -910,13 +910,22 @@ increases).
 
 ## 10. Setup
 
+Step-by-step, for Windows and VS Code: **[docs/RUNNING_LOCALLY.md](RUNNING_LOCALLY.md)**.
+The short version:
+
 ```bash
 npm install
-cp .env.example .env          # fill in from the Firebase console
-npm run dev                   # /attendance/kiosk · /attendance/preview
-npm run test:logic            # 41 assertions
+npm run setup:env             # copies .env.example, then says what is still blank
+npm run dev                   # /attendance/kiosk · /attendance/admin
+npm run preview:dev           # the whole app against an in-memory fake, no Firebase
+npm run test:logic            # 58 assertions
+npm run check:i18n            # en/my key parity
 npm run build
 ```
+
+`.env` is gitignored because this repository is public. Nothing Firebase-shaped
+and no branch PIN may be committed to it — `VITE_DEV_BRANCH_PINS` exists so the
+real PINs can live in your untracked `.env` while you test.
 
 ### Hosting: deep links need a rewrite
 
