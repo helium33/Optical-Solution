@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { LuGlasses, LuArrowRight, LuArrowLeft } from 'react-icons/lu';
 
@@ -28,6 +28,8 @@ export default function KioskGatePage() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  /* A ref, not the state, guards re-entry: state is a render behind. */
+  const busyRef = useRef(false);
 
   const branch = useMemo(() => (selected ? getBranch(selected) : null), [selected]);
 
@@ -36,38 +38,62 @@ export default function KioskGatePage() {
     setBranch(branch?.theme ?? HOUSE_THEME);
   }, [branch, setBranch]);
 
-  useEffect(() => {
-    if (!branch || pin.length !== 4 || busy) return;
+  /**
+   * Submit the moment the fourth digit lands.
+   *
+   * Called straight from the keypad's change handler rather than from an
+   * effect watching `pin`. The effect version had `busy` in its dependency
+   * list, so `setBusy(true)` re-ran it, and the re-run's cleanup cancelled the
+   * request that was still in flight — the promise resolved into a dead
+   * closure that neither navigated nor cleared the spinner, and the screen sat
+   * on "Unlocking…" forever.
+   *
+   * It only showed up against a real backend. With an instant in-memory stub
+   * the promise resolves in a microtask, before React has re-rendered and run
+   * the cleanup, so the bug hid completely in the preview.
+   *
+   * An explicit call has no dependency array to get wrong.
+   */
+  const submit = useCallback(
+    async (value) => {
+      if (!branch || busyRef.current) return;
 
-    let cancelled = false;
-    setBusy(true);
-    setError(null);
+      busyRef.current = true;
+      setBusy(true);
+      setError(null);
 
-    unlockKiosk(branch.id, pin)
-      .then((result) => {
-        if (cancelled) return;
+      try {
+        const result = await unlockKiosk(branch.id, value);
+
         if (result.ok) {
           openKioskSession(branch.id, { ttlMinutes: result.ttlMinutes });
           navigate(`/attendance/kiosk/${branch.id}`, { replace: true });
           return;
         }
-        setPin('');
-        setError(
-          result.reason === 'rate-limited'
-            ? 'Too many attempts. Wait a minute before trying again.'
-            : result.reason === 'unavailable'
-              ? 'Cannot reach the server. Check the connection.'
-              : 'That is not the PIN for this branch.',
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setBusy(false);
-      });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [pin, branch, busy, navigate]);
+        setPin('');
+        setError(messageFor(result.reason));
+      } catch (unexpected) {
+        setPin('');
+        setError(unexpected?.message ?? 'Something went wrong. Try again.');
+      } finally {
+        /* Always runs, whatever happened. The spinner cannot outlive the
+           request any more. */
+        busyRef.current = false;
+        setBusy(false);
+      }
+    },
+    [branch, navigate],
+  );
+
+  const onPinChange = useCallback(
+    (next) => {
+      setError(null);
+      setPin(next);
+      if (next.length === 4) submit(next);
+    },
+    [submit],
+  );
 
   return (
     <div className="relative grid min-h-dvh place-items-center overflow-hidden bg-surface bg-aurora px-4 py-10">
@@ -118,7 +144,7 @@ export default function KioskGatePage() {
               </div>
             ) : (
               <>
-                <PinPad value={pin} onChange={(next) => { setError(null); setPin(next); }} length={4} error={Boolean(error)} />
+                <PinPad value={pin} onChange={onPinChange} length={4} error={Boolean(error)} />
                 {error ? (
                   <p className="mt-5 text-center text-sm font-semibold text-danger-ink" role="alert">
                     {error}
@@ -143,6 +169,28 @@ export default function KioskGatePage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Turn a refusal into something the person in front of the tablet can act on.
+ *
+ * "Cannot reach the server" is useless when the real answer is "nobody has
+ * deployed the function that checks PINs yet" — so that case says so, and says
+ * what to do about it.
+ */
+function messageFor(reason) {
+  switch (reason) {
+    case 'rate-limited':
+      return 'Too many attempts. Wait a minute before trying again.';
+    case 'not-deployed':
+      return 'PIN checking is not set up on the server yet. Deploy the verifyBranchPin function, or set VITE_ALLOW_CLIENT_PUNCH=true for local testing.';
+    case 'timeout':
+      return 'The server did not answer. Check the connection and try again.';
+    case 'unavailable':
+      return 'Cannot reach the server. Check the connection.';
+    default:
+      return 'That is not the PIN for this branch.';
+  }
 }
 
 /** A miniature of each branch's palette, so the choice is visual. */

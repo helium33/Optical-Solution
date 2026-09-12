@@ -221,7 +221,24 @@ const notDeployed = (name) => {
  */
 const PREVIEW_PINS = JSON.parse(__PREVIEW_PINS__);
 
+/**
+ * Callables answer after a short delay rather than instantly.
+ *
+ * This is not cosmetic. An instant in-memory stub resolves in a microtask —
+ * before React has re-rendered — which hid a real bug where a submit effect's
+ * own cleanup cancelled the request it had just started, stranding the kiosk on
+ * "Unlocking…" forever against a real backend. The preview passed every time.
+ *
+ * A latency that resembles a network is what makes the preview able to fail the
+ * way production fails.
+ */
+const NETWORK_LATENCY_MS = 350;
+
+const likeANetwork = (value) =>
+  new Promise((resolve) => setTimeout(() => resolve(value), NETWORK_LATENCY_MS));
+
 export const httpsCallable = (fns, name) => async (payload) => {
+  await likeANetwork();
   if (name === 'verifyBranchPin') {
     const expected = PREVIEW_PINS[payload?.branchId] ?? '1234';
     return payload?.pin === expected

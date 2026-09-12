@@ -162,13 +162,19 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
   }, [webauthn, staff, send]);
 
   /* Auto-submit on the last digit — nobody should have to press "OK" after
-     typing a PIN into a full-width keypad. */
+     typing a PIN into a full-width keypad.
+     Called from the keypad rather than an effect watching `pin`; see the note
+     in KioskGatePage for the failure that shape produces. */
   const pinLength = branch?.staffPinLength ?? 4;
-  useEffect(() => {
-    if (step === STEP.PIN && pin.length === pinLength) {
-      send({ method: AUTH_METHOD.PIN, pin });
-    }
-  }, [pin, pinLength, step, send]);
+
+  const onPinChange = useCallback(
+    (next) => {
+      setError(null);
+      setPin(next);
+      if (next.length === pinLength) send({ method: AUTH_METHOD.PIN, pin: next });
+    },
+    [pinLength, send],
+  );
 
   /* Close on its own after a success, so the tablet returns to the roster. */
   useEffect(() => {
@@ -311,10 +317,7 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
               </p>
               <PinPad
                 value={pin}
-                onChange={(next) => {
-                  setError(null);
-                  setPin(next);
-                }}
+                onChange={onPinChange}
                 length={pinLength}
                 disabled={blocked}
                 error={Boolean(error)}

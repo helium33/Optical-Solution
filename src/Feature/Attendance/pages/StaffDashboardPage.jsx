@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   LuArrowLeft, LuCalendarCheck, LuClock, LuTimer, LuLogOut, LuChevronDown,
@@ -47,6 +47,7 @@ export default function StaffDashboardPage() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   const [range, setRange] = useState('mtd');
   const [summary, setSummary] = useState(null);
@@ -91,33 +92,54 @@ export default function StaffDashboardPage() {
     };
   }, [step, selected, branch, window.fromKey, window.toKey]);
 
+  /* Called straight from the keypad, not from an effect watching `pin` — see
+     the note in KioskGatePage for why that shape strands the spinner. */
   const submitPin = useCallback(
     async (value) => {
+      if (!branch || !selected || busyRef.current) return;
+
+      busyRef.current = true;
       setBusy(true);
       setError(null);
-      const result = await verifyStaffPin({ branchId: branch.id, staffId: selected.id, pin: value });
-      setBusy(false);
+      try {
+        const result = await verifyStaffPin({
+          branchId: branch.id,
+          staffId: selected.id,
+          pin: value,
+        });
 
-      if (result.ok) {
-        setStep(STEP.SUMMARY);
+        if (result.ok) {
+          setStep(STEP.SUMMARY);
+          setPin('');
+          return;
+        }
         setPin('');
-        return;
+        setError(
+          result.reason === 'rate-limited'
+            ? 'Too many tries. Wait a minute.'
+            : result.reason === 'unavailable'
+              ? 'Cannot reach the server.'
+              : 'That PIN was not recognised.',
+        );
+      } catch (unexpected) {
+        setPin('');
+        setError(unexpected?.message ?? 'Something went wrong. Try again.');
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
       }
-      setPin('');
-      setError(
-        result.reason === 'rate-limited'
-          ? 'Too many tries. Wait a minute.'
-          : result.reason === 'unavailable'
-            ? 'Cannot reach the server.'
-            : 'That PIN was not recognised.',
-      );
     },
     [branch, selected],
   );
 
-  useEffect(() => {
-    if (step === STEP.PIN && pin.length === 4 && !busy) submitPin(pin);
-  }, [pin, step, busy, submitPin]);
+  const onPinChange = useCallback(
+    (next) => {
+      setError(null);
+      setPin(next);
+      if (next.length === 4) submitPin(next);
+    },
+    [submitPin],
+  );
 
   const signOut = () => {
     setSelected(null);
@@ -204,12 +226,7 @@ export default function StaffDashboardPage() {
               {busy ? (
                 <div className="py-16"><Spinner size={26} label="Checking…" /></div>
               ) : (
-                <PinPad
-                  value={pin}
-                  onChange={(next) => { setError(null); setPin(next); }}
-                  length={4}
-                  error={Boolean(error)}
-                />
+                <PinPad value={pin} onChange={onPinChange} length={4} error={Boolean(error)} />
               )}
             </div>
 

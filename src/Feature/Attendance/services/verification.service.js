@@ -22,7 +22,30 @@ import { auth, functions } from '../config/firebase';
  * never permitted to read.
  */
 
-const callVerifyBranchPin = httpsCallable(functions, 'verifyBranchPin');
+/**
+ * Firebase callables default to a 70-second timeout. On a shop tablet that is
+ * indistinguishable from "frozen" — nobody waits over a minute at a keypad, they
+ * just press it again. Fifteen seconds is long enough for a slow connection and
+ * short enough to stay a conversation.
+ */
+const CALL_TIMEOUT_MS = 15_000;
+
+const callVerifyBranchPin = httpsCallable(functions, 'verifyBranchPin', {
+  timeout: CALL_TIMEOUT_MS,
+});
+
+/** Reject rather than hang, whatever the SDK decides to do. */
+const withTimeout = (promise, ms = CALL_TIMEOUT_MS) =>
+  Promise.race([
+    promise,
+    new Promise((unused, reject) =>
+      setTimeout(() => {
+        const error = new Error('The server did not answer in time.');
+        error.code = 'deadline-exceeded';
+        reject(error);
+      }, ms),
+    ),
+  ]);
 
 const DEV_FALLBACK = import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true';
 const DEV_BRANCH_PIN = import.meta.env.VITE_DEV_BRANCH_PIN || '1234';
@@ -34,9 +57,12 @@ export async function unlockKiosk(branchId, pin) {
   let result;
 
   try {
-    const response = await callVerifyBranchPin({ branchId, pin });
+    const response = await withTimeout(callVerifyBranchPin({ branchId, pin }));
     result = response.data;
   } catch (error) {
+    if (error?.code === 'deadline-exceeded' || error?.code === 'functions/deadline-exceeded') {
+      return { ok: false, reason: 'timeout' };
+    }
     if (DEV_FALLBACK && error?.code === 'functions/not-found') {
       console.warn(
         '[attendance] verifyBranchPin is not deployed — using the development PIN and an ' +
@@ -48,6 +74,15 @@ export async function unlockKiosk(branchId, pin) {
     }
     if (error?.code === 'functions/resource-exhausted') return { ok: false, reason: 'rate-limited' };
     if (error?.code === 'functions/permission-denied') return { ok: false, reason: 'wrong-pin' };
+    if (error?.code === 'functions/not-found') {
+      /* The function simply is not there. Say that, rather than blaming the
+         network — the fix is a deploy, not a better signal. */
+      console.error(
+        '[attendance] The verifyBranchPin function is not deployed. Deploy it, or set ' +
+          'VITE_ALLOW_CLIENT_PUNCH=true (with VITE_DEV_BRANCH_PIN) to test locally.',
+      );
+      return { ok: false, reason: 'not-deployed' };
+    }
     return { ok: false, reason: 'unavailable', message: error?.message };
   }
 
