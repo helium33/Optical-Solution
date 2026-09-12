@@ -18,7 +18,8 @@
     "deploy:hosting": "node scripts/check-env.mjs && vite build && firebase deploy --only hosting",
     "deploy:indexes": "firebase deploy --only firestore:indexes",
     "setup:env": "node scripts/setup-env.mjs",
-    "check:i18n": "node scripts/check-i18n.mjs"
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "merge:rules": "node scripts/merge-rules.mjs"
   },
   "dependencies": {
     "date-fns": "^4.4.0",

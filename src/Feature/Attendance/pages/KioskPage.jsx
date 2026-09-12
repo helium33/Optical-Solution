@@ -70,7 +70,13 @@ export default function KioskPage() {
     if (!branchId) return undefined;
     return subscribeBranchStaff(branchId, setStaff, (error) => {
       setStaff([]);
-      setLoadError(error?.message ?? null);
+      /* A key, not the sentence, so it re-renders in whichever language the
+         reader picks next. "Missing or insufficient permissions" is Firebase's
+         own wording and says nothing about the cause: the tablet IS signed in,
+         the rules simply were never deployed for these collections. */
+      setLoadError(
+        error?.code === 'permission-denied' ? 'errors.rulesNotDeployed' : null,
+      );
     });
   }, [branchId]);
 
@@ -167,7 +173,9 @@ export default function KioskPage() {
       ) : staff.length === 0 ? (
         <div className="card card-pad text-center">
           <p className="text-sm font-semibold text-ink">{t('kiosk.noStaff')}</p>
-          <p className="mt-1 text-xs text-ink-muted">{loadError ?? t('kiosk.noStaffHint')}</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+            {t(loadError ?? 'kiosk.noStaffHint')}
+          </p>
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">

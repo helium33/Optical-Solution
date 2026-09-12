@@ -123,7 +123,8 @@
     "generic": "Something went wrong. Try again.",
     "anonymousDisabled": "Turn on Anonymous sign-in in Firebase → Authentication → Sign-in method. The kiosk needs some identity before Firestore will let it read the roster.",
     "notDeployed": "PIN checking is not set up on the server yet. Deploy the verifyBranchPin function, or set VITE_ALLOW_CLIENT_PUNCH=true for local testing.",
-    "timeout": "The server did not answer. Check the connection and try again."
+    "timeout": "The server did not answer. Check the connection and try again.",
+    "rulesNotDeployed": "This tablet is signed in but Firestore is refusing to send the roster — the security rules have not been deployed for the attendance collections. Run `npm run merge:rules` and publish the result."
   },
   "admin": {
     "title": "Attendance",

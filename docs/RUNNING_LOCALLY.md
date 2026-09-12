@@ -86,10 +86,63 @@ Your three real PINs then work exactly as they will in production. They are safe
 in `.env` because `.env` is gitignored — **never** put them in `.env.example`,
 in the code, or in a commit message.
 
-One thing to switch on in Firebase first: **Authentication → Sign-in method →
-Anonymous → Enable**. Without it the kiosk shows "Missing or insufficient
-permissions", because Firestore refuses every read from a browser with no
-identity at all.
+Two things have to be done in Firebase before any of this works. **Both** of
+them, and the second is the one that is easy to miss.
+
+---
+
+## 3b. Two things to switch on in Firebase
+
+### a. Anonymous sign-in
+
+**Authentication → Sign-in method → Anonymous → Enable.**
+
+Firestore refuses every read from a browser with no identity at all. The real
+app mints a branch-scoped token from a Cloud Function; until that exists the
+kiosk signs in anonymously instead.
+
+### b. Deploy the security rules
+
+This is the one that produces **"Missing or insufficient permissions."** on the
+roster screen *after* the branch PIN is accepted. The PIN worked and the tablet
+is signed in — Firestore is simply refusing to hand over `staff`, because no
+rule grants it. A Firebase project denies everything it has not been told to
+allow.
+
+You cannot just deploy this repo's `firestore.rules`:
+`firebase deploy --only firestore:rules` **replaces the entire ruleset**, and
+this Firebase project is shared with the storefront. Deploying would delete the
+storefront's rules.
+
+So merge them:
+
+```powershell
+# 1. Firebase Console -> Firestore Database -> Rules.
+#    Select everything in the editor, copy it, and save it in this folder as:
+#       firestore.rules.existing
+
+# 2. Merge this app's rules into yours:
+npm run merge:rules
+
+# 3. Read firestore.rules.merged, then paste it back into the console
+#    rules editor and press Publish.
+```
+
+`merge:rules` copies your blocks through untouched, renames any helper function
+whose name collides with yours (so it cannot redefine `isAdmin()` for the
+storefront), warns if both rulesets claim the same collection, and refuses to
+write a file that does not parse or that calls a helper nobody defines.
+
+Neither `firestore.rules.existing` nor `firestore.rules.merged` is committed —
+they are your project's access control, and this repository is public.
+
+Once the Cloud Functions are deployed, re-run it as `npm run merge:rules -- --prod`
+to switch from the development rules to the real ones.
+
+> **What the development rules give up:** an anonymous session carries no
+> claims, so they can only ask "is anyone signed in?". Anyone who can reach your
+> Firebase project can read every branch's roster. That is fine for a week of
+> testing with fake staff. It is not fine once real people's hours are in there.
 
 ---
 
@@ -135,6 +188,8 @@ for testing anything real.
 ```powershell
 npm run test:logic    # 58 assertions: geofence, overtime, monthly roll-up
 npm run check:i18n    # English and Myanmar have the same keys
+npm run check:env     # .env has everything Firebase needs
+npm run merge:rules   # merge this app's rules into your project's
 npm run lint          # ESLint
 npm run build         # production build
 ```
@@ -150,7 +205,8 @@ predate the attendance app — not something you broke.
 | What you see | What it means |
 |---|---|
 | "Firebase is not configured" | No `.env`, or it is missing keys. Run `npm run setup:env`. |
-| "Missing or insufficient permissions" | Anonymous sign-in is off in Firebase, or the rules are not deployed. |
+| "Missing or insufficient permissions" | The rules are not deployed. See 3b — `npm run merge:rules`. |
+| Unlock fails, mentioning Anonymous sign-in | Authentication → Sign-in method → Anonymous → Enable. |
 | "That is not the PIN for this branch" | `VITE_DEV_BRANCH_PINS` is not set, so it is still expecting `1234`. |
 | "PIN checking is not set up on the server yet" | `VITE_ALLOW_CLIENT_PUNCH=true` is missing from `.env`. |
 | Page is blank / 404 on a deep link | Restart `npm run dev`. Vite does not pick up `.env` changes while running. |
@@ -163,12 +219,8 @@ startup. Stop with `Ctrl+C`, run `npm run dev` again.
 
 ## Deploying the rules
 
-The Firestore rules are **not** listed in `firebase.json`, deliberately: this
-Firebase project is shared with the storefront, and
-`firebase deploy --only firestore:rules` **replaces** the entire ruleset. Merge
-the `match` blocks from `firestore.rules` into the project's existing file
-first, then deploy that file by name.
+See **3b** above — `npm run merge:rules`.
 
-While the Functions do not exist, `firestore.rules.development` is the weaker
-ruleset that lets a signed-in browser read and write directly. It is for testing
-only — it grants any signed-in user the ability to write attendance records.
+The Firestore rules are deliberately **not** listed in `firebase.json`, so that
+a stray `firebase deploy` can never replace the storefront's ruleset by
+accident. Deploy the merged file by name, or paste it into the console.

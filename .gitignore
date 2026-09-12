@@ -35,5 +35,13 @@ dist-ssr
 .env
 .env.local
 
+# Your Firebase project's live security rules, and the merge of them with this
+# app's. Both are project configuration rather than source: firestore.rules.existing
+# is copied out of your Firebase console, and .merged is generated from it by
+# `npm run merge:rules`. Committing either to a public repository would publish
+# the exact shape of your access control.
+firestore.rules.existing
+firestore.rules.merged
+
 # preview build output
 dist-preview
