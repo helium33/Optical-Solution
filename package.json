@@ -16,7 +16,8 @@
     "firebase": "firebase",
     "check:env": "node scripts/check-env.mjs",
     "deploy:hosting": "node scripts/check-env.mjs && vite build && firebase deploy --only hosting",
-    "deploy:indexes": "firebase deploy --only firestore:indexes"
+    "deploy:indexes": "firebase deploy --only firestore:indexes",
+    "setup:env": "node scripts/setup-env.mjs"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
