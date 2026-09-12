@@ -112,6 +112,7 @@ const PREVIEW_ADMIN = {
   email: 'kyawwinhtun564@gmail.com',
   displayName: 'Preview admin',
   photoURL: null,
+  isAnonymous: false,
   getIdTokenResult: async () => ({
     claims: { admin: true, email: 'kyawwinhtun564@gmail.com', email_verified: true },
   }),

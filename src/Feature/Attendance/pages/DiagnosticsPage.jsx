@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, limit, query, setDoc } from 'firebase/firestore';
 import { LuCircleCheck, LuCircleX, LuLoaderCircle, LuTriangleAlert } from 'react-icons/lu';
 
 import { auth, db } from '../config/firebase';
 import { COLLECTIONS } from '../services/paths';
+import { ADMIN_EMAILS, isAllowlistedAdmin } from '../auth/admins';
 
 /**
  * `/attendance/diagnostics` — no gate, reachable by anyone with the URL.
@@ -17,8 +18,17 @@ import { COLLECTIONS } from '../services/paths';
  * browser is holding right now, and a live read against every collection the
  * kiosk needs — each with the exact Firestore error code, not a paraphrase.
  *
- * Deliberately reads nothing sensitive. It requests one document from each
- * collection and reports success/failure, never the document itself.
+ * Reading the roster is one rule (`signedIn()`); adding a staff member is a
+ * completely different one (`isAdmin()`), evaluated against the SAME token by
+ * a rule that never runs unless a write is attempted. A roster that loads
+ * proves nothing about whether "Add staff" will work — they can fail
+ * independently, and the generic error looks identical either way. Section 4
+ * runs the actual write, gated behind a manual button because — unlike the
+ * read checks — it touches real data (a synthetic document it deletes again
+ * immediately after).
+ *
+ * The read checks request one document from each collection and report
+ * success/failure, never the document itself.
  */
 
 const CHECKED_COLLECTIONS = [
@@ -32,6 +42,8 @@ export default function DiagnosticsPage() {
   const [authState, setAuthState] = useState({ status: 'checking' });
   const [results, setResults] = useState(null);
   const [running, setRunning] = useState(false);
+  const [writeCheck, setWriteCheck] = useState(null);
+  const [writeRunning, setWriteRunning] = useState(false);
 
   useEffect(
     () =>
@@ -75,6 +87,37 @@ export default function DiagnosticsPage() {
   useEffect(() => {
     runChecks();
   }, [runChecks]);
+
+  /**
+   * Writes and immediately deletes one throwaway document at
+   * `staff/__diagnostics_probe__`. Manual, not automatic like the read
+   * checks: those only ever read one document and discard it, this touches
+   * real data. The document ID makes it unmistakable if it were ever left
+   * behind, and the delete runs even when create succeeded but something
+   * else in the app is watching the collection — cleanup is not optional.
+   */
+  const runWriteCheck = async () => {
+    setWriteRunning(true);
+    const ref = doc(db, COLLECTIONS.STAFF, '__diagnostics_probe__');
+    let create = null;
+    let del = null;
+    try {
+      await setDoc(ref, { diagnosticProbe: true, at: Date.now() });
+      create = { ok: true };
+    } catch (error) {
+      create = { ok: false, code: error?.code ?? 'unknown', message: error?.message ?? String(error) };
+    }
+    if (create.ok) {
+      try {
+        await deleteDoc(ref);
+        del = { ok: true };
+      } catch (error) {
+        del = { ok: false, code: error?.code ?? 'unknown', message: error?.message ?? String(error) };
+      }
+    }
+    setWriteCheck({ create, delete: del });
+    setWriteRunning(false);
+  };
 
   const signInAndRetry = async () => {
     try {
@@ -148,7 +191,9 @@ export default function DiagnosticsPage() {
                 <code>signedIn()</code> alone, not on any claim, or every read below will be
                 denied regardless of what the rules for <code>staff</code> say.
               </p>
-            ) : null}
+            ) : (
+              <AdminVerdict claims={authState.claims} />
+            )}
           </>
         )}
       </Section>
@@ -186,6 +231,73 @@ export default function DiagnosticsPage() {
                 ) : null}
               </div>
             ))}
+          </div>
+        )}
+      </Section>
+
+      {/* ---- live write ---- */}
+      <Section
+        title="4. Can this identity write as an admin?"
+        action={
+          <button
+            type="button"
+            onClick={runWriteCheck}
+            disabled={writeRunning}
+            className="rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:text-ink disabled:opacity-50"
+          >
+            {writeRunning ? 'Running…' : writeCheck ? 'Run again' : 'Run write check'}
+          </button>
+        }
+      >
+        <p className="mb-3 text-xs leading-relaxed text-ink-subtle">
+          Reading the roster and adding a staff member are gated by two different rules —{' '}
+          <code>signedIn()</code> for the read, <code>isAdmin()</code> for the write — evaluated
+          against the same token. Section 3 passing proves nothing about this. Writes and then
+          deletes one throwaway document at <code>staff/__diagnostics_probe__</code>; nothing
+          else in your data is touched.
+        </p>
+        {!writeCheck ? (
+          <Row icon={<LuLoaderCircle className="h-4 w-4" />} tone="pending">
+            Not run yet
+          </Row>
+        ) : (
+          <div className="space-y-2">
+            <Row
+              icon={writeCheck.create.ok ? <LuCircleCheck className="h-4 w-4" /> : <LuCircleX className="h-4 w-4" />}
+              tone={writeCheck.create.ok ? 'good' : 'bad'}
+            >
+              create on <code>staff</code>
+            </Row>
+            {!writeCheck.create.ok ? (
+              <p className="ml-6 text-xs text-danger-ink/85">
+                <code>{writeCheck.create.code}</code>: {writeCheck.create.message}
+              </p>
+            ) : null}
+            {writeCheck.create.ok ? (
+              <>
+                <Row
+                  icon={writeCheck.delete.ok ? <LuCircleCheck className="h-4 w-4" /> : <LuCircleX className="h-4 w-4" />}
+                  tone={writeCheck.delete.ok ? 'good' : 'bad'}
+                >
+                  cleanup delete
+                </Row>
+                {!writeCheck.delete.ok ? (
+                  <p className="ml-6 text-xs text-danger-ink/85">
+                    <code>{writeCheck.delete.code}</code>: {writeCheck.delete.message} — the probe
+                    document may still exist at <code>staff/__diagnostics_probe__</code>; delete it
+                    by hand from the Firestore console.
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+            {!writeCheck.create.ok && writeCheck.create.code === 'permission-denied' ? (
+              <p className="mt-2 text-xs text-ink-muted">
+                This is exactly what &ldquo;Add staff&rdquo; hits. The rules do not consider this
+                identity an admin — check section 2 above: is <code>email_verified</code> true, is
+                the email on the allowlist, and does it match what is actually published (not just
+                what is in this repository)?
+              </p>
+            ) : null}
           </div>
         )}
       </Section>
@@ -234,6 +346,51 @@ export default function DiagnosticsPage() {
           Back to the kiosk
         </Link>
       </p>
+    </div>
+  );
+}
+
+/**
+ * A client-side re-evaluation of `isAdmin()` from `firestore.rules`, so the
+ * page can say WHY a write will fail before the write check even runs.
+ * `email_verified` is not something devtools can fake for a real Google
+ * account, so this reads the token's own claim rather than trusting the SDK
+ * user object — the token is what the rules actually see.
+ */
+function AdminVerdict({ claims }) {
+  const email = claims.email ?? null;
+  const emailVerified = claims.email_verified === true;
+  const onAllowlist = email ? isAllowlistedAdmin(email) : false;
+  const hasAdminClaim = claims.admin === true;
+  const shouldPass = hasAdminClaim || (emailVerified && onAllowlist);
+
+  return (
+    <div className="mt-3 rounded-xl border border-line bg-surface-sunken/50 p-3">
+      <p className="mb-2 text-xs font-bold text-ink">
+        Does this identity satisfy <code>isAdmin()</code>?
+      </p>
+      <KeyValue k="email" v={email ?? '(none on this token)'} />
+      <KeyValue k="email_verified" v={String(emailVerified)} />
+      <KeyValue k="on the admin allowlist" v={onAllowlist ? `yes (${ADMIN_EMAILS.length} addresses)` : 'no'} />
+      <KeyValue k="admin custom claim" v={hasAdminClaim ? 'true' : '(not set)'} />
+      <Row icon={shouldPass ? <LuCircleCheck className="h-4 w-4" /> : <LuCircleX className="h-4 w-4" />} tone={shouldPass ? 'good' : 'bad'}>
+        {shouldPass ? 'Should pass isAdmin() — confirm with section 4 below' : 'Will NOT pass isAdmin() as written in this repo'}
+      </Row>
+      {!shouldPass && email && !onAllowlist ? (
+        <p className="mt-2 text-xs text-ink-subtle">
+          This address is not one of the three in{' '}
+          <code>src/Feature/Attendance/auth/admins.js</code>. Sign in with an allowlisted account,
+          or add this one to that file AND to <code>isAdmin()</code> in the rules — both have to
+          agree, and only one of them is enforced by anything.
+        </p>
+      ) : null}
+      {!shouldPass && email && onAllowlist && !emailVerified ? (
+        <p className="mt-2 text-xs text-ink-subtle">
+          The email is allowlisted but this token says <code>email_verified: false</code>. That is
+          unusual for a Google sign-in — sign out and back in, or check nothing intercepted the
+          OAuth flow.
+        </p>
+      ) : null}
     </div>
   );
 }

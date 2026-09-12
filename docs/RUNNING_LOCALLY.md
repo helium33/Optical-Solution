@@ -136,12 +136,17 @@ write a file that does not parse or that calls a helper nobody defines.
 **After publishing, open `/attendance/diagnostics` on the running app.** It is
 not a set of instructions to follow — it runs the actual checks: which Firebase
 project the bundle is pointed at, what identity the browser currently holds
-(signed out / anonymous / named, with its token claims), and a live read
-against every collection the kiosk needs, each with Firestore's exact error
-code. If a read still fails after publishing, this page says which collection
-and why, instead of the bare "Missing or insufficient permissions." the kiosk
-shows. It reads nothing sensitive — existence only, never a document's
-content.
+(signed out / anonymous / named, with its token claims), a live read against
+every collection the kiosk needs, and — separately — a live **write** check
+that mirrors exactly what "Add staff" does. Reading and writing are gated by
+two different rules (`signedIn()` vs `isAdmin()`) evaluated against the same
+token, so a roster that loads proves nothing about whether Add Staff will
+work; test both. The write check creates and immediately deletes one
+throwaway document at `staff/__diagnostics_probe__` — nothing else is
+touched. Signed in as an admin, the page also computes whether your token's
+email, `email_verified` flag and any `admin` custom claim actually satisfy
+`isAdmin()` as written in this repo, so it can tell you *why* a write will
+fail before you even click the button.
 
 Neither `firestore.rules.existing` nor `firestore.rules.merged` is committed —
 they are your project's access control, and this repository is public.
