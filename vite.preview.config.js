@@ -32,6 +32,11 @@ export default defineConfig({
   /* Relative asset URLs, so the bundle works wherever it is hosted. */
   base: './',
   plugins: [react()],
+  optimizeDeps: {
+    /* Same reason as vite.config.js: artifact-page.html lives in this
+       directory and points at a build output, not at source. */
+    entries: ['index.html'],
+  },
   resolve: {
     alias: [
       {
