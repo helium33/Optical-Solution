@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "//": "F5 opens Chrome on the kiosk with the dev server's sourcemaps attached.",
+  "configurations": [
+    {
+      "name": "Kiosk (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173/attendance/kiosk",
+      "webRoot": "${workspaceFolder}/src"
+    },
+    {
+      "name": "Admin dashboard (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173/attendance/admin",
+      "webRoot": "${workspaceFolder}/src"
+    }
+  ]
+}

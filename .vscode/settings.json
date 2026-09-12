@@ -1,0 +1,20 @@
+{
+  "//": "Workspace settings. Kept minimal — only the things that are wrong by default for this project.",
+
+  // Tailwind's IntelliSense does not look inside template literals or the
+  // `className={...}` conditionals this codebase uses everywhere.
+  "tailwindCSS.experimental.classRegex": [
+    ["className\\s*[:=]\\s*[\"'`]([^\"'`]*)[\"'`]", "([a-zA-Z0-9\\-:/\\[\\]\\.%]+)"]
+  ],
+  "tailwindCSS.includeLanguages": { "javascript": "javascript" },
+
+  // `@tailwind` and `@apply` are not CSS the language server knows.
+  "css.lint.unknownAtRules": "ignore",
+
+  // Burmese renders with stacked diacritics; the editor needs a font that has
+  // them or src/Feature/Attendance/i18n/locales/my.json is unreadable boxes.
+  "[json]": { "editor.fontFamily": "'Noto Sans Myanmar', Consolas, 'Courier New', monospace" },
+
+  "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" },
+  "files.eol": "\n"
+}
