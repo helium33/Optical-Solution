@@ -14,7 +14,7 @@ import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '../config/firebase';
 import { attendanceCol, attendanceDoc, attendanceLogId } from './paths';
-import { computeWorkSession, businessDayKey } from '../lib/time';
+import { computeWorkSession, businessDayKey, zonedTimeToUtc } from '../lib/time';
 import { deviceFingerprint } from '../lib/crypto';
 
 export const PUNCH = { CHECK_IN: 'check_in', CHECK_OUT: 'check_out' };
@@ -175,6 +175,8 @@ async function submitPunchUnverified(payload) {
     ip: ip ?? null,
     deviceId: payload.deviceId,
     verifiedBy: 'client-unverified',
+    /* Records made with the geofence switched off stay identifiable forever. */
+    ...(payload.locationBypass ? { locationBypass: payload.locationBypass } : {}),
   };
 
   if (kind === PUNCH.CHECK_IN) {
@@ -244,7 +246,12 @@ const minutesOf = (computed) => ({
   break: computed.breakMinutes,
   worked: computed.workedMinutes,
   regular: computed.regularMinutes,
+  /* Actual minutes past the shift... */
   overtime: computed.overtimeMinutes,
+  /* ...and the whole hours those are paid as. Both, always: one is the
+     measurement, the other is the payroll figure, and a payslip query needs
+     to be answerable from the record. */
+  overtimeHours: computed.overtimeHours,
   late: computed.lateMinutes,
   earlyLeave: computed.earlyLeaveMinutes,
 });
@@ -258,6 +265,94 @@ export async function approveOvertime(logId, actor) {
     'overtime.reason': null,
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * Rewrite a day's check-in and check-out times, and recompute everything that
+ * depends on them.
+ *
+ * This is the administrator's override, and the reason it lives in the service
+ * rather than the dialog is that an edited day must go through the SAME
+ * calculation as a punched one. If the component worked out the new totals
+ * itself there would be two implementations of the overtime rule, and the one
+ * used for corrections would be the one nobody tested.
+ *
+ * The shift is taken from the record's own `shiftSnapshot`, not from today's
+ * branch config — correcting a punch from March must use March's shift, or the
+ * correction silently applies a policy that did not exist yet.
+ *
+ * @param {string} checkInHHMM   "09:05" in branch-local time, or null to leave
+ * @param {string} checkOutHHMM  "17:40", or null to leave the shift open
+ */
+export async function amendPunchTimes({
+  log,
+  branch,
+  checkInHHMM,
+  checkOutHHMM,
+  overtimeRequested,
+  actor,
+  reason,
+}) {
+  if (!reason?.trim()) {
+    const error = new Error('An amendment needs a reason.');
+    error.code = 'invalid-argument';
+    throw error;
+  }
+
+  const timezone = log.timezone ?? branch.timezone;
+  const shift = log.shiftSnapshot ?? branch.shift;
+
+  const checkInAt = checkInHHMM
+    ? zonedTimeToUtc(log.dayKey, checkInHHMM, timezone)
+    : log.checkIn?.at
+      ? new Date(log.checkIn.at)
+      : null;
+
+  if (!checkInAt) {
+    const error = new Error('A day needs a check-in time before it can be corrected.');
+    error.code = 'failed-precondition';
+    throw error;
+  }
+
+  let checkOutAt = null;
+  if (checkOutHHMM) {
+    checkOutAt = zonedTimeToUtc(log.dayKey, checkOutHHMM, timezone);
+    /* A clock-out earlier than the clock-in means the shift ran past midnight —
+       the normal case for a late close, not an error to reject. */
+    if (checkOutAt.getTime() < checkInAt.getTime()) {
+      checkOutAt = new Date(checkOutAt.getTime() + 86_400_000);
+    }
+  }
+
+  const computed = computeWorkSession({
+    checkInAt,
+    checkOutAt,
+    shift,
+    timeZone: timezone,
+    overtimeRequested,
+  });
+
+  const stamp = (existing, at) =>
+    at
+      ? {
+          ...(existing ?? {}),
+          at: at.toISOString(),
+          method: existing?.method ?? 'admin-edit',
+          verifiedBy: 'admin-edit',
+        }
+      : null;
+
+  return amendLog(
+    log.id,
+    {
+      checkIn: stamp(log.checkIn, checkInAt),
+      checkOut: stamp(log.checkOut, checkOutAt),
+      status: computed.status,
+      minutes: minutesOf(computed),
+      overtime: computed.overtime,
+    },
+    { actor, reason },
+  );
 }
 
 /**

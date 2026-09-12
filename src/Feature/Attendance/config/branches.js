@@ -13,6 +13,18 @@
 
 export const BRANCH_IDS = ['win', 'pwint', 'yangon'];
 
+/**
+ * All three branches currently point at the same coordinates.
+ *
+ * That is deliberate for now, and worth being explicit about rather than
+ * leaving three identical literals looking like a copy-paste slip: until each
+ * shop's real pin is surveyed, one shared location lets the fence be tested
+ * end to end. The consequence is that the geofence cannot presently tell the
+ * three branches apart — someone inside the radius satisfies the check for
+ * every branch. Replace these per shop before this governs anyone's pay.
+ */
+export const SHARED_PIN = { lat: 23.995407, lng: 97.900507 };
+
 /** 50 m, per the attendance policy. Overridable per branch. */
 export const DEFAULT_RADIUS_METERS = 50;
 
@@ -32,8 +44,8 @@ export const BRANCHES = {
     city: 'Mandalay',
     timezone: 'Asia/Yangon',
     geofence: {
-      lat: 21.9588,
-      lng: 96.0891,
+      lat: SHARED_PIN.lat,
+      lng: SHARED_PIN.lng,
       radiusMeters: DEFAULT_RADIUS_METERS,
       maxAccuracyMeters: DEFAULT_MAX_ACCURACY_METERS,
     },
@@ -66,8 +78,8 @@ export const BRANCHES = {
     city: 'Mandalay',
     timezone: 'Asia/Yangon',
     geofence: {
-      lat: 21.9747,
-      lng: 96.0836,
+      lat: SHARED_PIN.lat,
+      lng: SHARED_PIN.lng,
       radiusMeters: DEFAULT_RADIUS_METERS,
       maxAccuracyMeters: DEFAULT_MAX_ACCURACY_METERS,
     },
@@ -91,8 +103,8 @@ export const BRANCHES = {
     city: 'Yangon',
     timezone: 'Asia/Yangon',
     geofence: {
-      lat: 16.7967,
-      lng: 96.1489,
+      lat: SHARED_PIN.lat,
+      lng: SHARED_PIN.lng,
       radiusMeters: DEFAULT_RADIUS_METERS,
       maxAccuracyMeters: DEFAULT_MAX_ACCURACY_METERS,
     },

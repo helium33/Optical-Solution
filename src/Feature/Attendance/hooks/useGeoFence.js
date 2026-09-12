@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { evaluateFence, FENCE } from '../lib/geo';
 import { evaluateNetwork, fetchPublicIp, NETWORK } from '../lib/network';
-import { evaluateAccess, ACCESS } from '../lib/accessPolicy';
+import { evaluateAccess, ACCESS, INTENT } from '../lib/accessPolicy';
+import { DEV_MODE } from '../config/devMode';
 
 /**
  * Location gate for the kiosk: HTML5 Geolocation measured against the branch
@@ -15,11 +16,20 @@ import { evaluateAccess, ACCESS } from '../lib/accessPolicy';
  * the doorway is let in as soon as the radio catches up, instead of being told
  * "too far" based on the first bad sample.
  *
+ * When DEV_MODE is on the radios are never touched at all — there is no point
+ * spinning up a GPS watch whose answer is going to be ignored, and asking for a
+ * location permission you do not intend to honour trains people to grant it
+ * without reading.
+ *
  * @param {object|null} branch          branch record (geofence + network)
  * @param {boolean}     options.enabled false parks the hook (no radio use)
  * @param {number}      options.ipRefreshMs how often to re-read the public IP
+ * @param {string}      options.intent  one of INTENT — overtime skips the IP check
  */
-export function useGeoFence(branch, { enabled = true, ipRefreshMs = 5 * 60_000 } = {}) {
+export function useGeoFence(
+  branch,
+  { enabled = true, ipRefreshMs = 5 * 60_000, intent = INTENT.CHECK_IN } = {},
+) {
   const [position, setPosition] = useState(null);
   const [geoError, setGeoError] = useState(null);
   const [permission, setPermission] = useState('prompt');
@@ -50,7 +60,7 @@ export function useGeoFence(branch, { enabled = true, ipRefreshMs = 5 * 60_000 }
 
   /* ---- position watch ---- */
   useEffect(() => {
-    if (!enabled || !branch) return undefined;
+    if (!enabled || !branch || DEV_MODE) return undefined;
 
     if (!navigator.geolocation) {
       setGeoError('This browser cannot report a location.');
@@ -101,7 +111,7 @@ export function useGeoFence(branch, { enabled = true, ipRefreshMs = 5 * 60_000 }
 
   /* ---- public IP, polled slowly ---- */
   useEffect(() => {
-    if (!enabled || !branch?.network?.allowedCidrs?.length) {
+    if (!enabled || DEV_MODE || !branch?.network?.allowedCidrs?.length) {
       setIpChecked(true);
       return undefined;
     }
@@ -141,6 +151,31 @@ export function useGeoFence(branch, { enabled = true, ipRefreshMs = 5 * 60_000 }
         permission,
         geoError,
         branchName: branch?.shortName ?? branch?.name ?? 'the shop',
+        devMode: DEV_MODE,
+        intent,
+      }),
+    [fence, network, permission, geoError, branch, intent],
+  );
+
+  /**
+   * Re-run the same policy for a different intent.
+   *
+   * The overtime carve-out is decided in the clock-out dialog, not here — the
+   * switch is flipped after the fence has already been evaluated. Rather than
+   * pushing that state back up into the page, the dialog asks for the verdict
+   * it needs against the fix already in hand. Same inputs, same function, one
+   * policy.
+   */
+  const evaluateFor = useCallback(
+    (nextIntent) =>
+      evaluateAccess({
+        fence,
+        network,
+        permission,
+        geoError,
+        branchName: branch?.shortName ?? branch?.name ?? 'the shop',
+        devMode: DEV_MODE,
+        intent: nextIntent,
       }),
     [fence, network, permission, geoError, branch],
   );
@@ -166,9 +201,14 @@ export function useGeoFence(branch, { enabled = true, ipRefreshMs = 5 * 60_000 }
     allowed: policy.access === ACCESS.ALLOWED,
     pending: policy.access === ACCESS.PENDING,
     blocked: policy.access === ACCESS.BLOCKED,
+    /* Was this punch allowed only because the checks were skipped? The punch
+       payload carries it so the record can be tagged. */
+    bypassed: Boolean(policy.bypassed),
+    devMode: DEV_MODE,
     /* actions */
+    evaluateFor,
     refresh,
   };
 }
 
-export { FENCE, NETWORK, ACCESS };
+export { FENCE, NETWORK, ACCESS, INTENT };

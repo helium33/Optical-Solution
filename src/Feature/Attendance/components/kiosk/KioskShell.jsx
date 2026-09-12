@@ -1,4 +1,5 @@
-import { LuGlasses, LuLock } from 'react-icons/lu';
+import { LuGlasses, LuLock, LuUserRound } from 'react-icons/lu';
+import { Link } from 'react-router-dom';
 
 import ThemeToggle from '../ui/ThemeToggle';
 import GeoStatusPill from './GeoStatusPill';
@@ -55,6 +56,16 @@ export default function KioskShell({ branch, geo, onLock, children }) {
             >
               {formatClock(now, branch?.timezone ?? 'Asia/Yangon')}
             </time>
+            {/* A staff member's own figures. Reachable from the shop floor
+                because that is where people stand when they wonder how much
+                overtime they are owed. */}
+            <Link
+              to="/attendance/me"
+              aria-label="See my own records"
+              className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface-card text-ink-subtle transition-colors hover:border-brand-500/40 hover:text-brand-ink"
+            >
+              <LuUserRound className="h-4 w-4" aria-hidden="true" />
+            </Link>
             <ThemeToggle />
             {onLock ? (
               <button

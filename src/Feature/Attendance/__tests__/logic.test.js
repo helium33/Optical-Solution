@@ -17,6 +17,7 @@ import {
   computeWorkSession,
   formatDuration,
   toDecimalHours,
+  minutesToBilledHours,
   dayKeyRange,
   ATTENDANCE_STATUS,
 } from '../lib/time';
@@ -308,6 +309,43 @@ test('a clock-out before the clock-in is rejected, not negative', () => {
   assert.equal(s.invalid, true);
   assert.equal(s.workedMinutes, 0);
   assert.equal(s.overtimeMinutes, 0);
+});
+
+test('OVERTIME: paid in whole hours, always rounded up', () => {
+  assert.equal(minutesToBilledHours(0), 0);
+  assert.equal(minutesToBilledHours(1), 1);
+  assert.equal(minutesToBilledHours(30), 1);   // the rule as stated
+  assert.equal(minutesToBilledHours(59), 1);
+  assert.equal(minutesToBilledHours(60), 1);
+  assert.equal(minutesToBilledHours(61), 2);
+  assert.equal(minutesToBilledHours(120), 2);
+  assert.equal(minutesToBilledHours(121), 3);
+});
+
+test('OVERTIME: a 90-minute evening is paid as 2 hours', () => {
+  const s = session('09:00', '19:00', true);
+  assert.equal(s.overtimeMinutes, 90);  // what was worked
+  assert.equal(s.overtimeHours, 2);     // what gets paid
+  assert.equal(s.overtime.billedHours, 2);
+});
+
+test('OVERTIME: 30 minutes over is paid as a full hour', () => {
+  const s = session('09:00', '18:00', true);
+  assert.equal(s.overtime.eligibleMinutes, 30);
+  assert.equal(s.overtimeHours, 1);
+});
+
+test('OVERTIME: rounding up never eats into regular hours', () => {
+  const s = session('09:00', '18:00', true);
+  // regular is reduced by the 30 minutes actually worked, not the billed hour
+  assert.equal(s.regularMinutes, s.workedMinutes - s.overtimeMinutes);
+  assert.ok(s.regularMinutes > 0);
+});
+
+test('OVERTIME: an unclaimed late finish bills zero hours', () => {
+  const s = session('09:00', '19:00', false);
+  assert.equal(s.overtimeHours, 0);
+  assert.equal(s.overtime.billedHours, 0);
 });
 
 test('formatDuration reads like a timesheet', () => {

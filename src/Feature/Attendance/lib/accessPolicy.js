@@ -38,9 +38,61 @@ export const WARNING = {
   NETWORK_UNVERIFIED: 'network-unverified',
   NETWORK_MISMATCH_ADVISORY: 'network-mismatch-advisory',
   BORDERLINE_FIX: 'borderline-fix',
+  /** Location checks were skipped entirely. Never quiet about this one. */
+  DEV_MODE_BYPASS: 'dev-mode-bypass',
+  /** Overtime clock-out: the network check does not apply. */
+  OVERTIME_NETWORK_EXEMPT: 'overtime-network-exempt',
 };
 
-export function evaluateAccess({ fence, network, permission, geoError, branchName = 'the shop' }) {
+/** What the person is trying to do — it changes which checks apply. */
+export const INTENT = {
+  CHECK_IN: 'check_in',
+  CHECK_OUT: 'check_out',
+  /**
+   * A clock-out with an overtime claim.
+   *
+   * This one is exempt from the network check, and the reasoning is worth
+   * recording: the shop router is often off by the time someone finishes a
+   * late shift, so a staff member owed overtime would be the person most
+   * likely to be blocked by an IP rule. The geofence still applies in full —
+   * they must still physically be at the shop — so the thing the check exists
+   * to prove is still proved, just by the stronger of the two signals.
+   */
+  OVERTIME_CHECK_OUT: 'overtime_check_out',
+};
+
+/**
+ * @param fence      result of evaluateFence()
+ * @param network    result of evaluateNetwork()
+ * @param permission browser geolocation permission state
+ * @param geoError   human-readable geolocation failure, if any
+ * @param devMode    when true, every location check is skipped
+ * @param intent     one of INTENT
+ */
+export function evaluateAccess({
+  fence,
+  network,
+  permission,
+  geoError,
+  branchName = 'the shop',
+  devMode = false,
+  intent = INTENT.CHECK_IN,
+}) {
+  /* ---- developer bypass -------------------------------------------------
+     Deliberately the very first thing checked, so a developer testing from
+     another country is not blocked by a permission prompt they will never be
+     able to satisfy. The warning rides along so the UI can say so loudly. */
+  if (devMode) {
+    return {
+      access: ACCESS.ALLOWED,
+      reason: null,
+      title: 'Location checks bypassed',
+      detail: 'Developer mode is on. Geofencing and the network check are disabled.',
+      warnings: [WARNING.DEV_MODE_BYPASS],
+      bypassed: true,
+    };
+  }
+
   if (permission === 'denied') {
     return blocked(BLOCK_REASON.PERMISSION_DENIED, {
       title: 'Location is blocked',
@@ -50,10 +102,7 @@ export function evaluateAccess({ fence, network, permission, geoError, branchNam
   }
 
   if (geoError) {
-    return blocked(BLOCK_REASON.GEO_UNAVAILABLE, {
-      title: 'Cannot read location',
-      detail: geoError,
-    });
+    return blocked(BLOCK_REASON.GEO_UNAVAILABLE, { title: 'Cannot read location', detail: geoError });
   }
 
   if (!fence || fence.verdict === FENCE.UNKNOWN) {
@@ -79,6 +128,17 @@ export function evaluateAccess({ fence, network, permission, geoError, branchNam
   const warnings = [];
   if (fence.borderline) warnings.push(WARNING.BORDERLINE_FIX);
 
+  /* ---- overtime carve-out ---- */
+  if (intent === INTENT.OVERTIME_CHECK_OUT) {
+    return {
+      access: ACCESS.ALLOWED,
+      reason: null,
+      title: `At ${branchName}`,
+      detail: null,
+      warnings: [...warnings, WARNING.OVERTIME_NETWORK_EXEMPT],
+    };
+  }
+
   const verdict = network?.verdict ?? NETWORK.SKIPPED;
 
   if (verdict === NETWORK.MISMATCH) {
@@ -97,13 +157,7 @@ export function evaluateAccess({ fence, network, permission, geoError, branchNam
     warnings.push(WARNING.NETWORK_UNVERIFIED);
   }
 
-  return {
-    access: ACCESS.ALLOWED,
-    reason: null,
-    title: `At ${branchName}`,
-    detail: null,
-    warnings,
-  };
+  return { access: ACCESS.ALLOWED, reason: null, title: `At ${branchName}`, detail: null, warnings };
 }
 
 const blocked = (reason, { title, detail }) => ({
@@ -112,4 +166,5 @@ const blocked = (reason, { title, detail }) => ({
   title,
   detail,
   warnings: [],
+  bypassed: false,
 });

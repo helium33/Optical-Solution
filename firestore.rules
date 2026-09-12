@@ -120,7 +120,12 @@ service cloud.firestore {
     match /staff/{staffId} {
       allow read: if isAdmin() || (isKiosk() && resource.data.branchId == kioskBranch());
       allow create, update: if isAdmin() && staffShapeIsValid();
-      allow delete: if false;   // set active:false so past logs keep a name
+
+      // Removing someone is `active: false` (an update, above), which keeps
+      // past logs resolving to a name. Hard delete is a separate, deliberate
+      // act — a duplicate entry, a test record, a data-protection request —
+      // and the UI puts it behind typing the person's name. Admin only.
+      allow delete: if isAdmin();
 
       function staffShapeIsValid() {
         let data = request.resource.data;
@@ -131,6 +136,10 @@ service cloud.firestore {
             'supervisor', 'sales_leader', 'sales_executive', 'sales_associate'
           ]
           && data.active is bool
+          // Correcting a punch must not be able to smuggle a branch change
+          // past the rules: a person's branch is set on create and by an
+          // explicit role/branch edit, never as a side effect.
+          && (!('deactivatedAt' in data.keys()) || data.active == false || data.deactivatedAt == null)
           // A PIN or credential must never arrive on the parent document, even
           // from an admin — that is what the secrets subcollection is for.
           && !data.keys().hasAny(['pin', 'pinHash', 'webauthn', 'credentials']);

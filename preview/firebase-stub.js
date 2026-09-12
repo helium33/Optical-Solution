@@ -186,6 +186,11 @@ export const updateDoc = async (ref, patch) => {
   notify(ref.name);
 };
 
+export const deleteDoc = async (ref) => {
+  collections[ref.name]?.delete(ref.id);
+  notify(ref.name);
+};
+
 export const addDoc = async (ref, data) => {
   const id = `gen-${Math.random().toString(36).slice(2, 10)}`;
   collections[ref.name]?.set(id, { ...data, id });

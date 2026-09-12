@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { evaluateFence } from '../src/Feature/Attendance/lib/geo';
 import { evaluateNetwork } from '../src/Feature/Attendance/lib/network';
-import { evaluateAccess, ACCESS } from '../src/Feature/Attendance/lib/accessPolicy';
+import { evaluateAccess, ACCESS, INTENT } from '../src/Feature/Attendance/lib/accessPolicy';
 import { FENCE } from '../src/Feature/Attendance/lib/geo';
 import { NETWORK } from '../src/Feature/Attendance/lib/network';
 
@@ -55,6 +55,19 @@ export function useGeoFence(branch) {
     [fence, network, branch],
   );
 
+  const evaluateFor = useCallback(
+    (intent) =>
+      evaluateAccess({
+        fence,
+        network,
+        permission: 'granted',
+        geoError: null,
+        branchName: branch?.shortName ?? 'the shop',
+        intent,
+      }),
+    [fence, network, branch],
+  );
+
   const refresh = useCallback(() => setPosition(simulatedFix(branch)), [branch]);
 
   return {
@@ -68,8 +81,11 @@ export function useGeoFence(branch) {
     allowed: policy.access === ACCESS.ALLOWED,
     pending: policy.access === ACCESS.PENDING,
     blocked: policy.access === ACCESS.BLOCKED,
+    bypassed: false,
+    devMode: false,
+    evaluateFor,
     refresh,
   };
 }
 
-export { FENCE, NETWORK, ACCESS };
+export { FENCE, NETWORK, ACCESS, INTENT };

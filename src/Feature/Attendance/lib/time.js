@@ -130,6 +130,18 @@ export function shiftWindow(dayKey, shift, timeZone) {
  *      recorded as `capped` and needs an admin edit — almost always a forgotten
  *      clock-out rather than a 14-hour day.
  *   5. regular = worked - overtime, so the two never double-count.
+ *   6. Overtime is PAID IN WHOLE HOURS, rounded up: 30 minutes past the shift
+ *      is an hour, 61 minutes is two. Both numbers are kept — `overtimeMinutes`
+ *      is what was actually worked and `overtimeHours` is what gets paid —
+ *      because the rounding is a payroll rule, not a measurement. Storing only
+ *      the rounded figure would make a 65-minute evening indistinguishable from
+ *      a 119-minute one, and the first person to query a payslip would have
+ *      nothing to check it against.
+ *
+ *      Note this interacts with the grace window: under `overtimeGraceMinutes`
+ *      nothing is owed at all, and one minute over it is owed a full hour. That
+ *      step is intentional and generous by design; widen the grace, not the
+ *      rounding, if it is too generous.
  *
  * A claim that survives none of these still records `claimed: true` with
  * `grantedMinutes: 0` and a reason, so the employee sees why it was refused
@@ -177,7 +189,15 @@ export function computeWorkSession({
       scheduledStart: window.start,
       scheduledEnd: window.end,
       expectedMinutes: window.expectedMinutes,
-      overtime: { claimed: overtimeRequested, eligibleMinutes: 0, grantedMinutes: 0, capped: false, reason: 'invalid-punch-pair' },
+      overtimeHours: 0,
+      overtime: {
+        claimed: overtimeRequested,
+        eligibleMinutes: 0,
+        grantedMinutes: 0,
+        billedHours: 0,
+        capped: false,
+        reason: 'invalid-punch-pair',
+      },
     };
   }
 
@@ -218,6 +238,13 @@ export function computeWorkSession({
   }
 
   const overtimeMinutes = grantedMinutes;
+
+  /* Paid in whole hours, always rounded up. */
+  const overtimeHours = minutesToBilledHours(overtimeMinutes);
+
+  /* Regular hours are reduced by the overtime ACTUALLY worked, never by the
+     rounded-up billed figure — subtracting a rounded-up number would eat into
+     regular pay and, on a short shift, could drive it negative. */
   const regularMinutes = Math.max(0, workedMinutes - overtimeMinutes);
 
   const status = open
@@ -238,6 +265,7 @@ export function computeWorkSession({
     workedMinutes,
     regularMinutes,
     overtimeMinutes,
+    overtimeHours,
     lateMinutes,
     earlyLeaveMinutes,
     status,
@@ -245,10 +273,25 @@ export function computeWorkSession({
       claimed: Boolean(overtimeRequested),
       eligibleMinutes,
       grantedMinutes,
+      billedHours: overtimeHours,
       capped,
       reason,
     },
   };
+}
+
+/**
+ * Minutes of overtime -> hours actually paid, rounded up.
+ *
+ *   0 -> 0     (nothing owed is nothing owed; only a claim of zero rounds to zero)
+ *   1 -> 1
+ *  30 -> 1
+ *  60 -> 1
+ *  61 -> 2
+ */
+export function minutesToBilledHours(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return 0;
+  return Math.ceil(minutes / 60);
 }
 
 /* ──────────────────────────── Formatting ──────────────────────────────── */

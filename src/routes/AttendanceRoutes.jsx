@@ -50,8 +50,30 @@ const AttendanceRoutes = [
     lazy: page(() => import('../Feature/Attendance/pages/KioskPage')),
   },
   {
+    /**
+     * Hidden. Reachable only after the secret sequence has been typed — the
+     * guard redirects anyone else straight back to the kiosk, so bookmarking
+     * or guessing the URL reveals nothing either.
+     */
     path: 'admin/login',
-    lazy: page(() => import('../Feature/Attendance/pages/AdminLoginPage')),
+    lazy: async () => {
+      const [{ default: AdminLoginPage }, { RequireSecretReveal }] = await Promise.all([
+        import('../Feature/Attendance/pages/AdminLoginPage'),
+        import('../Feature/Attendance/auth/guards'),
+      ]);
+      return {
+        Component: () => (
+          <RequireSecretReveal>
+            <AdminLoginPage />
+          </RequireSecretReveal>
+        ),
+      };
+    },
+  },
+  {
+    /** Personal dashboard — a staff member's own figures, opened with their PIN. */
+    path: 'me',
+    lazy: page(() => import('../Feature/Attendance/pages/StaffDashboardPage')),
   },
   {
     path: 'admin',

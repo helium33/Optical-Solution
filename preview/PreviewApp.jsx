@@ -1,16 +1,18 @@
 import { lazy, Suspense } from 'react';
 import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { LuFlaskConical, LuGlasses, LuChartColumn, LuShieldCheck } from 'react-icons/lu';
+import { LuFlaskConical, LuGlasses, LuChartColumn, LuUserRound } from 'react-icons/lu';
 
 import { BranchThemeProvider } from '../src/Feature/Attendance/theme/BranchThemeProvider';
 import { AuthProvider } from '../src/Feature/Attendance/auth/AuthProvider';
 import Spinner from '../src/Feature/Attendance/components/ui/Spinner';
 import ThemeToggle from '../src/Feature/Attendance/components/ui/ThemeToggle';
+import SecretAdminDoor from '../src/Feature/Attendance/components/SecretAdminDoor';
 
 const KioskGatePage = lazy(() => import('../src/Feature/Attendance/pages/KioskGatePage'));
 const KioskPage = lazy(() => import('../src/Feature/Attendance/pages/KioskPage'));
 const AdminLoginPage = lazy(() => import('../src/Feature/Attendance/pages/AdminLoginPage'));
 const DashboardPreviewPage = lazy(() => import('../src/Feature/Attendance/pages/DashboardPreviewPage'));
+const StaffDashboardPage = lazy(() => import('../src/Feature/Attendance/pages/StaffDashboardPage'));
 
 /**
  * The preview shell.
@@ -26,8 +28,9 @@ const DashboardPreviewPage = lazy(() => import('../src/Feature/Attendance/pages/
 
 const LINKS = [
   { to: '/attendance/kiosk', label: 'Kiosk', Icon: LuGlasses },
+  { to: '/attendance/me', label: 'My records', Icon: LuUserRound },
   { to: '/attendance/dashboard', label: 'Dashboard', Icon: LuChartColumn },
-  { to: '/attendance/admin/login', label: 'Admin sign-in', Icon: LuShieldCheck },
+  /* No Admin link on purpose — that door is meant to be invisible. Type 7860. */
 ];
 
 function PreviewChrome() {
@@ -65,8 +68,8 @@ function PreviewChrome() {
         </nav>
 
         <p className="ml-auto hidden text-[11px] text-ink-subtle sm:block">
-          Branch PIN <strong className="font-bold text-ink">1234</strong> · staff PIN:
-          any 4 digits · sample data only
+          Branch PIN <strong className="font-bold text-ink">1234</strong> · staff PIN: any 4
+          digits · type <strong className="font-bold text-ink">7860</strong> for admin
         </p>
 
         <ThemeToggle />
@@ -81,6 +84,7 @@ export default function PreviewApp() {
       <AuthProvider>
         <div className="attendance-root">
           <MemoryRouter initialEntries={['/attendance/kiosk']}>
+            <SecretAdminDoor />
             <PreviewChrome />
             <Suspense
               fallback={
@@ -93,6 +97,7 @@ export default function PreviewApp() {
                 <Route path="/" element={<Navigate to="/attendance/kiosk" replace />} />
                 <Route path="/attendance/kiosk" element={<KioskGatePage />} />
                 <Route path="/attendance/kiosk/:branchId" element={<KioskPage />} />
+                <Route path="/attendance/me" element={<StaffDashboardPage />} />
                 <Route path="/attendance/dashboard" element={<DashboardPreviewPage />} />
                 <Route path="/attendance/admin/login" element={<AdminLoginPage />} />
                 <Route path="*" element={<Navigate to="/attendance/kiosk" replace />} />

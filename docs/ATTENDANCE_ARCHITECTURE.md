@@ -5,7 +5,9 @@ existing Vite + React + Tailwind storefront as a self-contained feature module
 under `src/Feature/Attendance/`.
 
 - **Kiosk** — `/attendance/kiosk` — a shared shop tablet. No staff accounts.
+- **My records** — `/attendance/me` — a staff member's own figures, opened with their PIN.
 - **Admin** — `/attendance/admin` — Google OAuth, three allowlisted addresses.
+  The sign-in is **hidden**: type `7860` anywhere to reveal it.
 - **Preview** — `/attendance/preview` — the dashboard with sample data. Dev builds only.
 
 ---
@@ -200,7 +202,8 @@ answer to a tablet in the shop and an owner reviewing from abroad.
                                      // sales_executive | sales_associate
   "employeeCode": "WIN-014",
   "phone": "+95…",
-  "active": true,                    // never deleted — history must resolve
+  "active": true,                    // false = removed; history still resolves
+  "deactivatedAt": "<timestamp>",    // present only once removed
   "webauthnCredentialCount": 1,      // presence is public, the key is not
   "joinedAt": "<timestamp>",
   "createdAt": "<timestamp>", "createdBy": "<uid>"
@@ -242,12 +245,19 @@ single `get()` instead of a query.
 
   "status": "on_time",               // on_time | late | incomplete
   "minutes": { "gross": 600, "break": 60, "worked": 540,
-               "regular": 450, "overtime": 90,
+               "regular": 450,
+               "overtime": 90,        // minutes ACTUALLY worked past the shift
+               "overtimeHours": 2,    // whole hours PAID, rounded up
                "late": 0, "earlyLeave": 0 },
 
   "overtime": { "claimed": true, "eligibleMinutes": 90, "grantedMinutes": 90,
+                "billedHours": 2,
                 "capped": false, "reason": null,
                 "approvedBy": null, "approvedAt": null },
+
+  // Present only when the punch was made with location checks switched off.
+  // Kept so records created during testing stay identifiable forever.
+  "locationBypass": "dev-mode",
 
   // Frozen so a later policy change cannot silently rewrite history.
   "shiftSnapshot": { "start": "09:00", "end": "17:30", "…": "…" },
@@ -333,6 +343,69 @@ the identity would leave a "locked" tablet with live read access.
 On top of it, `services/kioskSession.js` keeps a `sessionStorage` session with a
 hard TTL (14 h) and an idle timeout (45 min). `sessionStorage` rather than
 `localStorage` deliberately: closing the tab must end the shift session.
+
+---
+
+## 4b. Developer bypass (`DEV_MODE`)
+
+`config/devMode.js`. When on, the 50 m geofence and the network check are both
+skipped, so the app can be exercised from anywhere.
+
+This is the most dangerous switch in the codebase — left on in production, every
+employee can clock in from bed — so it is built to be hard to ship by accident:
+
+1. **Off by default.** Enabling it is a deliberate act.
+2. **A production build refuses it** unless a second variable also says yes, so
+   one stray `VITE_DEV_MODE=true` in a deploy config cannot do it:
+   ```env
+   VITE_DEV_MODE=true
+   VITE_ALLOW_DEV_MODE_IN_PROD=true   # only then does a prod build honour it
+   ```
+   A refused request logs an error saying so rather than silently doing nothing.
+3. **A banner sits across every screen** while it is on. Not dismissible, not a
+   console note — a thing you cannot use the app without seeing.
+4. **Every punch made while bypassing is tagged** `locationBypass: "dev-mode"`,
+   so test records stay greppable in the database long after the flag is off.
+
+The sensors are not merely ignored under the bypass — they are never started.
+There is no point spinning up a GPS watch whose answer will be discarded, and
+asking for a location permission you do not intend to honour trains people to
+grant permissions without reading them.
+
+For a quick local bypass without touching `.env`, flip `DEV_MODE_OVERRIDE` at
+the top of the file. Leave it `false` in anything you commit.
+
+---
+
+## 4c. The hidden administrator door
+
+The admin sign-in is absent from the interface. Typing **`7860`** anywhere
+reveals it and navigates there.
+
+`hooks/useSecretSequence.js` does the listening; `services/adminReveal.js` holds
+the flag; `RequireSecretReveal` in `auth/guards.jsx` keeps the route itself
+unreachable, so bookmarking or guessing the URL reveals nothing either.
+
+**What this is:** a way to keep an owner-only door off a screen that faces the
+shop floor. Staff never need it, customers can see the tablet, and an "Admin"
+button invites poking.
+
+**What this is not:** a security control. The sequence is in the JavaScript
+bundle and the reveal flag is in sessionStorage, where anyone can set it. Typing
+7860 protects nothing — the protection is Google OAuth, the three-address
+allowlist, and the Firestore rules behind it. **This hides a door; it does not
+lock one.** The reveal expires after 10 minutes so a shared tablet is not left
+standing open.
+
+Two details that matter more than they look:
+
+- The listener is **inert while a PIN pad is open**. The kiosk keypad also
+  listens for digits, and a staff member whose personal PIN happens to be 7860
+  would otherwise reveal the admin door every time they clocked in.
+  `services/pinEntryLock.js` is what coordinates that.
+- It never stores, logs or transmits anything. The buffer holds at most four
+  characters, clears on match and clears again after a pause. It is not a
+  keylogger and must not be turned into one by "debugging" it with a log line.
 
 ---
 
@@ -458,6 +531,35 @@ correct across a DST boundary; Myanmar has none, but the branch table is data.
    flagged `capped: true` and needs an admin edit — almost always a forgotten
    clock-out rather than a 14-hour day.
 5. **`regular = worked - overtime`**, so the two never double-count.
+6. **Paid in whole hours, rounded up.** 30 minutes past the shift is an hour;
+   61 minutes is two.
+
+### Why both numbers are stored
+
+`minutes.overtime` is what was worked. `minutes.overtimeHours` is what gets
+paid. Keeping only the rounded figure would make a 65-minute evening
+indistinguishable from a 119-minute one, and the first person to query a payslip
+would have nothing to check it against.
+
+The rounding is applied **per day, then summed** — never the other way round.
+Two evenings of 30 minutes are two paid hours, not one. Summing the minutes
+first and rounding at the end would quietly shorten the payslip, and it is an
+easy mistake to make in a monthly report; `summariseRows` in
+`staffSummary.service.js` is where the correct order lives.
+
+Note the interaction with the grace window: under `overtimeGraceMinutes` nothing
+is owed at all, and one minute over it is owed a full hour. That step is
+intentional and generous by design — widen the grace, not the rounding, if it is
+too generous.
+
+### Overtime and the network check
+
+A clock-out **with an overtime claim is exempt from the shop-network check**
+(`INTENT.OVERTIME_CHECK_OUT`). The reasoning: the shop router is often off by
+the time a late shift ends, so the person owed overtime is exactly the one an IP
+rule would strand. **The geofence still applies in full** — they must still
+physically be at the shop — so the thing the check exists to prove is still
+proved, by the stronger of the two signals.
 
 A claim that survives none of these still records `claimed: true` with
 `grantedMinutes: 0` **and a reason**, so the employee sees why it was refused and
@@ -539,10 +641,19 @@ the UI run).
 | `finishWebAuthnRegistration` | `{ staffId, credential }` | Verify attestation, origin and rpId; store the public key in `staff/{id}/credentials/{credId}`; bump `webauthnCredentialCount` |
 | `beginWebAuthnAuthentication` | `{ staffId }` | Fresh stored challenge + `allowCredentials` |
 | `setAdminClaims` | auth trigger | Mint `admin: true` for the three allowlisted addresses only |
+| `setStaffPin` | `{ staffId, pin }` | Admin only. Hash with `lib/crypto.js` and write `staff/{id}/secrets/pin`. Used by the Add-employee form |
+| `verifyStaffPin` | `{ branchId, staffId, pin }` | Compare against the stored hash; rate-limit per staff member. Opens the personal dashboard |
+| `getStaffSummary` | `{ branchId, staffId, fromKey, toKey }` | Verify the caller may see this person, then return **only their** tallies using `summariseRows` — the other rows must not reach the device |
 
 `lib/crypto.js` and `lib/time.js` are dependency-free and are meant to be
 imported by the Functions package, so the PIN derivation and the overtime rule
 exist in exactly one implementation.
+
+`getStaffSummary` deserves a note. The kiosk token can read its whole branch —
+it has to, or the roster would not render — so a client-side "filter to my own
+rows" is a display convention, not a boundary: anyone with devtools on the shop
+tablet could read a colleague's hours. The callable is what makes the personal
+dashboard actually personal.
 
 **Two things the functions must not delegate to the client:** the challenge in a
 WebAuthn ceremony (a browser-invented challenge is replayable, which reduces the

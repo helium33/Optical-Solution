@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LuGlasses, LuLogOut, LuUsers, LuTimer, LuCircleAlert, LuExternalLink } from 'react-icons/lu';
+import {
+  LuGlasses, LuLogOut, LuUsers, LuTimer, LuCircleAlert, LuExternalLink,
+  LuNetwork,
+} from 'react-icons/lu';
 
 import ThemeToggle from '../components/ui/ThemeToggle';
 import Avatar from '../components/ui/Avatar';
@@ -8,13 +11,17 @@ import StatTile from '../components/dashboard/StatTile';
 import AttendanceTrendChart from '../components/dashboard/AttendanceTrendChart';
 import OvertimeBreakdownChart from '../components/dashboard/OvertimeBreakdownChart';
 import AttendanceTable from '../components/dashboard/AttendanceTable';
+import OrgTree from '../components/dashboard/OrgTree';
+import AddStaffDialog from '../components/dashboard/AddStaffDialog';
+import StaffDetailDialog from '../components/dashboard/StaffDetailDialog';
+import Segmented from '../components/ui/Segmented';
 
 import { useAuth } from '../auth/AuthProvider';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useAttendanceReport, resolveRange } from '../hooks/useAttendanceReport';
-import { subscribeAllStaff } from '../services/staff.service';
+import { subscribeAllStaffIncludingInactive } from '../services/staff.service';
 import { BRANCHES, BRANCH_IDS, getBranch } from '../config/branches';
-import { formatDuration, toDecimalHours } from '../lib/time';
+import { formatDuration, toDecimalHours, businessDayKey } from '../lib/time';
 
 /**
  * Reporting for all three shops.
@@ -36,6 +43,10 @@ export default function AdminDashboardPage() {
     overtimeOnly: false,
   });
   const [roster, setRoster] = useState([]);
+  const [view, setView] = useState('overview');
+  const [addingTo, setAddingTo] = useState(null);
+  const [detailFor, setDetailFor] = useState(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   const branch = filters.branchId === 'all' ? null : getBranch(filters.branchId);
   const timezone = branch?.timezone ?? 'Asia/Yangon';
@@ -45,7 +56,14 @@ export default function AdminDashboardPage() {
     setBranch(branch?.theme ?? HOUSE_THEME);
   }, [branch, setBranch]);
 
-  useEffect(() => subscribeAllStaff(setRoster, () => setRoster([])), []);
+  useEffect(
+    () => subscribeAllStaffIncludingInactive(setRoster, () => setRoster([])),
+    [refreshNonce],
+  );
+
+  /* Reporting counts active people only; the team view also shows removed
+     ones, which is the only way to restore someone taken off by mistake. */
+  const activeRoster = useMemo(() => roster.filter((person) => person.active !== false), [roster]);
 
   const range = useMemo(
     () => resolveRange(filters.range, { timeZone: timezone }),
@@ -65,7 +83,7 @@ export default function AdminDashboardPage() {
     toKey: range.toKey,
     roles,
     overtimeOnly: filters.overtimeOnly,
-    roster,
+    roster: activeRoster,
   });
 
   const { totals, daily, loading } = report;
@@ -83,6 +101,13 @@ export default function AdminDashboardPage() {
   }, [report, filters.branchId]);
 
   const rate = totals.attendanceRate;
+
+  /* Today's punches, for the status pill beside each person in the tree. */
+  const todayKey = businessDayKey(new Date(), timezone);
+  const todayLogs = useMemo(
+    () => report.rows.filter((row) => row.dayKey === todayKey),
+    [report.rows, todayKey],
+  );
 
   return (
     <div className="min-h-dvh bg-surface">
@@ -109,6 +134,17 @@ export default function AdminDashboardPage() {
             Open kiosk
             <LuExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
           </a>
+
+          <Segmented
+            size="sm"
+            label="View"
+            options={[
+              { value: 'overview', label: 'Reports' },
+              { value: 'team', label: 'Team' },
+            ]}
+            value={view}
+            onChange={setView}
+          />
 
           <ThemeToggle />
 
@@ -139,6 +175,30 @@ export default function AdminDashboardPage() {
           </p>
         ) : null}
 
+        {view === 'team' ? (
+          <section className="pt-6">
+            <header className="mb-4">
+              <h2 className="inline-flex items-center gap-2 text-base font-bold tracking-tight text-ink">
+                <LuNetwork className="h-4 w-4 text-ink-subtle" aria-hidden="true" />
+                Team
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+                Grouped by seniority: Supervisor, then Sales Leader, Sales Executive and Sales
+                Associate. Tap anyone to correct a day or take them off the system.
+              </p>
+            </header>
+
+            <OrgTree
+              staff={roster}
+              logs={todayLogs}
+              branchIds={branchIds}
+              timezone={timezone}
+              onSelect={setDetailFor}
+              onAdd={setAddingTo}
+            />
+          </section>
+        ) : (
+        <>
         {/* ---- headline figures ---- */}
         <section
           className={`mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 ${loading ? 'opacity-60 transition-opacity' : ''}`}
@@ -192,7 +252,28 @@ export default function AdminDashboardPage() {
 
         {/* ---- the log ---- */}
         <AttendanceTable rows={report.rows} loading={loading} timezone={timezone} />
+        </>
+        )}
       </main>
+
+      <AddStaffDialog
+        open={Boolean(addingTo)}
+        branchId={addingTo}
+        actor={principal}
+        onClose={() => setAddingTo(null)}
+        onAdded={() => setRefreshNonce((n) => n + 1)}
+      />
+
+      <StaffDetailDialog
+        open={Boolean(detailFor)}
+        person={detailFor}
+        actor={principal}
+        onClose={() => setDetailFor(null)}
+        onChanged={() => {
+          setRefreshNonce((n) => n + 1);
+          report.refresh();
+        }}
+      />
     </div>
   );
 }

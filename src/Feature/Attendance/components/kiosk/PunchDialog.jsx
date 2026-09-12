@@ -9,6 +9,8 @@ import OvertimeToggle from './OvertimeToggle';
 import { useWebAuthn } from '../../hooks/useWebAuthn';
 import { useNow } from '../../hooks/useNow';
 import { submitPunch, PUNCH, AUTH_METHOD } from '../../services/attendance.service';
+import { INTENT, ACCESS } from '../../lib/accessPolicy';
+import { BYPASS_TAG } from '../../config/devMode';
 import { computeWorkSession, formatClock, formatDuration } from '../../lib/time';
 import { roleLabel } from '../../config/roles';
 
@@ -89,6 +91,24 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
     });
   }, [isCheckOut, log, branch, now]);
 
+  /**
+   * Which checks apply to the punch as it currently stands.
+   *
+   * Claiming overtime exempts the clock-out from the shop-network check — the
+   * router is often off by the time a late shift ends, so the person owed
+   * overtime is exactly the one an IP rule would strand. The geofence still
+   * applies in full, so "were they at the shop" is still answered, by the
+   * stronger of the two signals.
+   */
+  const intent = !isCheckOut
+    ? INTENT.CHECK_IN
+    : overtime
+      ? INTENT.OVERTIME_CHECK_OUT
+      : INTENT.CHECK_OUT;
+
+  const policy = geo.evaluateFor ? geo.evaluateFor(intent) : geo.policy;
+  const allowed = policy.access === ACCESS.ALLOWED;
+
   const send = useCallback(
     async (auth) => {
       setStep(STEP.WORKING);
@@ -105,6 +125,10 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
           position: geo.position,
           geo: { distance: geo.fence?.distance ?? null, verdict: geo.fence?.verdict ?? null },
           ip: geo.ip,
+          intent,
+          /* Tagged on the record so a punch made with the fence switched off
+             stays identifiable long after the flag is switched back on. */
+          locationBypass: geo.bypassed ? BYPASS_TAG : null,
         });
         setSubmitted({
           kind,
@@ -123,7 +147,7 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
         setPin('');
       }
     },
-    [kind, branch, staff, overtime, geo, preview, onSubmitted],
+    [kind, branch, staff, overtime, geo, preview, intent, onSubmitted],
   );
 
   const onBiometric = useCallback(async () => {
@@ -155,7 +179,7 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
 
   if (!staff || !branch) return null;
 
-  const blocked = !geo.allowed;
+  const blocked = !allowed;
   const verb = isCheckOut ? 'Clock out' : 'Clock in';
 
   return (
@@ -216,9 +240,9 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
             <div className="flex items-start gap-3 rounded-2xl bg-danger-soft p-4">
               <LuTriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger-ink" aria-hidden="true" />
               <div>
-                <p className="text-sm font-bold text-danger-ink">{geo.policy.title}</p>
-                {geo.policy.detail ? (
-                  <p className="mt-1 text-xs leading-relaxed text-danger-ink/80">{geo.policy.detail}</p>
+                <p className="text-sm font-bold text-danger-ink">{policy.title}</p>
+                {policy.detail ? (
+                  <p className="mt-1 text-xs leading-relaxed text-danger-ink/80">{policy.detail}</p>
                 ) : null}
               </div>
             </div>

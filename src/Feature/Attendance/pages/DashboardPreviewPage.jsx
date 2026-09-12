@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LuUsers, LuTimer, LuCircleAlert, LuFlaskConical } from 'react-icons/lu';
+import { LuUsers, LuTimer, LuCircleAlert, LuFlaskConical, LuNetwork } from 'react-icons/lu';
 
 import FilterBar from '../components/dashboard/FilterBar';
 import StatTile from '../components/dashboard/StatTile';
 import AttendanceTrendChart from '../components/dashboard/AttendanceTrendChart';
 import OvertimeBreakdownChart from '../components/dashboard/OvertimeBreakdownChart';
 import AttendanceTable from '../components/dashboard/AttendanceTable';
+import OrgTree from '../components/dashboard/OrgTree';
+import AddStaffDialog from '../components/dashboard/AddStaffDialog';
+import StaffDetailDialog from '../components/dashboard/StaffDetailDialog';
 import ThemeToggle from '../components/ui/ThemeToggle';
+import Segmented from '../components/ui/Segmented';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { BRANCHES, BRANCH_IDS } from '../config/branches';
 import { STAFF_ROLE_ORDER } from '../config/roles';
@@ -52,6 +56,9 @@ function buildFixture() {
     name,
     branchId: BRANCH_IDS[index % 3],
     role: STAFF_ROLE_ORDER[3 - (index % 4)],
+    employeeCode: `${BRANCH_IDS[index % 3].slice(0, 3).toUpperCase()}-${String(index + 1).padStart(3, '0')}`,
+    hasBiometrics: index % 3 === 0,
+    active: true,
   }));
 
   const rows = [];
@@ -107,6 +114,9 @@ export default function DashboardPreviewPage() {
     role: null,
     overtimeOnly: false,
   });
+  const [view, setView] = useState('overview');
+  const [addingTo, setAddingTo] = useState(null);
+  const [detailFor, setDetailFor] = useState(null);
 
   const { keys, roster, rows: allRows } = useMemo(buildFixture, []);
 
@@ -210,9 +220,55 @@ export default function DashboardPreviewPage() {
           <LuFlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
           Preview with sample data — not a real attendance record
         </span>
-        <ThemeToggle />
+        <div className="flex items-center gap-3">
+          <Segmented
+            size="sm"
+            label="View"
+            options={[
+              { value: 'overview', label: 'Reports' },
+              { value: 'team', label: 'Team' },
+            ]}
+            value={view}
+            onChange={setView}
+          />
+          <ThemeToggle />
+        </div>
       </div>
 
+      {view === 'team' ? (
+        <section className="pt-2">
+          <header className="mb-4">
+            <h2 className="inline-flex items-center gap-2 text-base font-bold tracking-tight text-ink">
+              <LuNetwork className="h-4 w-4 text-ink-subtle" aria-hidden="true" />
+              Team
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+              Grouped by seniority. Tap anyone to correct a day or take them off the system.
+            </p>
+          </header>
+          <OrgTree
+            staff={roster.map((person) => ({ ...person, active: true }))}
+            logs={[]}
+            branchIds={BRANCH_IDS}
+            timezone="Asia/Yangon"
+            onSelect={setDetailFor}
+            onAdd={setAddingTo}
+          />
+          <AddStaffDialog
+            open={Boolean(addingTo)}
+            branchId={addingTo}
+            actor={{ uid: 'preview-admin' }}
+            onClose={() => setAddingTo(null)}
+          />
+          <StaffDetailDialog
+            open={Boolean(detailFor)}
+            person={detailFor}
+            actor={{ uid: 'preview-admin', displayName: 'Preview admin' }}
+            onClose={() => setDetailFor(null)}
+          />
+        </section>
+      ) : (
+      <>
       <FilterBar filters={filters} onChange={setFilters} />
 
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -251,6 +307,8 @@ export default function DashboardPreviewPage() {
       </section>
 
       <AttendanceTable rows={rows} loading={false} timezone="Asia/Yangon" />
+      </>
+      )}
     </div>
   );
 }
