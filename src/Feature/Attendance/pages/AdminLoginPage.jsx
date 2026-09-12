@@ -16,7 +16,7 @@ import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
  * of ten they are simply signed into the wrong Google account.
  */
 export default function AdminLoginPage() {
-  const { status, error, signIn, allowlist } = useAuth();
+  const { status, error, errorKind, signIn, allowlist } = useAuth();
   const { setBranch } = useBranchTheme();
   const location = useLocation();
   const navigate = useNavigate();
@@ -81,15 +81,44 @@ export default function AdminLoginPage() {
                 />
               </button>
 
+              {/* Two different failures, two different answers. Telling someone
+                  to switch Google accounts when the real problem is a disabled
+                  provider sends them round every account they own. */}
               {error ? (
-                <div className="mt-4 flex items-start gap-3 rounded-2xl bg-danger-soft p-4" role="alert">
-                  <LuTriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger-ink" aria-hidden="true" />
+                <div
+                  className={`mt-4 flex items-start gap-3 rounded-2xl p-4 ${
+                    errorKind === 'rejected' ? 'bg-danger-soft' : 'bg-warn-soft'
+                  }`}
+                  role="alert"
+                >
+                  <LuTriangleAlert
+                    className={`mt-0.5 h-4 w-4 shrink-0 ${
+                      errorKind === 'rejected' ? 'text-danger-ink' : 'text-warn-ink'
+                    }`}
+                    aria-hidden="true"
+                  />
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-danger-ink">Not an administrator</p>
-                    <p className="mt-1 break-words text-xs leading-relaxed text-danger-ink/85">{error}</p>
-                    <p className="mt-2 text-xs text-danger-ink/70">
-                      Sign out of that Google account, or switch accounts, and try again.
-                    </p>
+                    {errorKind === 'rejected' ? (
+                      <>
+                        <p className="text-sm font-bold text-danger-ink">Not an administrator</p>
+                        <p className="mt-1 break-words text-xs leading-relaxed text-danger-ink/85">
+                          {error}
+                        </p>
+                        <p className="mt-2 text-xs text-danger-ink/70">
+                          Sign out of that Google account, or switch accounts, and try again.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-bold text-warn-ink">Could not sign in</p>
+                        <p className="mt-1 break-words text-xs leading-relaxed text-warn-ink/90">
+                          {error}
+                        </p>
+                        <p className="mt-2 text-xs text-warn-ink/75">
+                          This is not about your account — sign-in did not get that far.
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
               ) : null}

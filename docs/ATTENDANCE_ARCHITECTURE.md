@@ -316,7 +316,24 @@ Restriction is applied at three depths, and it matters which one is load-bearing
 | 2. Firestore Rules | `firestore.rules` | **The security boundary.** `request.auth.token.email` against the same three addresses. |
 | 3. Custom claim | Cloud Function | `admin: true`, so rules can check a claim instead of a string list. |
 
-Deleting (1) is a UX regression. Deleting (2) is a breach. A non-allowlisted
+Deleting (1) is a UX regression. Deleting (2) is a breach.
+
+### Two failures, two messages
+
+`AuthProvider` reports an `errorKind` alongside the message:
+
+- **`rejected`** — Google sign-in worked; this account is not on the allowlist.
+  The page says "Not an administrator" and suggests switching accounts.
+- **`failed`** — sign-in never got that far: the Google provider is switched
+  off for the project, the popup was blocked, the API key is wrong, there is no
+  network. The page says "Could not sign in" and explicitly notes it is not
+  about the account.
+
+These used to be one undifferentiated string, so a project with the Google
+provider disabled told the owner "Not an administrator" and advised them to
+switch Google accounts — they would have tried every account they own before
+finding the real cause. `auth/operation-not-allowed` now names the exact
+console setting to change. A non-allowlisted
 account is signed straight back out rather than left half-authenticated, and
 `AuthProvider` warns to the console when the custom claim is missing — otherwise
 you debug permission-denied blind.

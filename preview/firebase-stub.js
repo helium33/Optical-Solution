@@ -82,29 +82,72 @@ export const getApp = () => ({ name: '[PREVIEW]' });
 
 /* ──────────────────────────── firebase/auth ───────────────────────────── */
 
-export const getAuth = () => ({ __preview: true, currentUser: null });
+/**
+ * A simulated administrator session.
+ *
+ * Real Google OAuth cannot complete inside a sandboxed preview frame, and the
+ * previous stub simply threw — which dropped the viewer on "Not an
+ * administrator" with advice to switch Google accounts, for a failure that had
+ * nothing to do with their account. The whole point of revealing the admin door
+ * is to see what is behind it.
+ *
+ * So the button signs in as an allowlisted address and the real
+ * AdminDashboardPage renders, against the same fixture data as everything else
+ * in the preview. The "Preview" chrome above is what says this is not a real
+ * session; the email has to be a real allowlisted one or the app's own
+ * allowlist check would reject it, which is the behaviour being demonstrated.
+ */
+let currentUser = null;
+const authListeners = new Set();
+const emitAuth = () => {
+  for (const listener of authListeners) listener(currentUser);
+};
+
+const PREVIEW_ADMIN = {
+  uid: 'preview-admin',
+  email: 'kyawwinhtun564@gmail.com',
+  displayName: 'Preview admin',
+  photoURL: null,
+  getIdTokenResult: async () => ({
+    claims: { admin: true, email: 'kyawwinhtun564@gmail.com', email_verified: true },
+  }),
+};
+
+export const getAuth = () => ({
+  __preview: true,
+  get currentUser() {
+    return currentUser;
+  },
+});
+
 export class GoogleAuthProvider {
   setCustomParameters() {}
 }
 export const browserLocalPersistence = 'local';
 export const setPersistence = async () => {};
+
 export const onAuthStateChanged = (auth, next) => {
-  /* No user, ever. The preview's admin route is reachable through the chrome
-     bar rather than through a real OAuth round trip. */
-  setTimeout(() => next(null), 0);
-  return () => {};
+  authListeners.add(next);
+  setTimeout(() => next(currentUser), 0);
+  return () => authListeners.delete(next);
 };
+
 export const getRedirectResult = async () => null;
+
 export const signInWithPopup = async () => {
-  const error = new Error(
-    'Google sign-in is disabled in the preview. Use the Dashboard link in the bar above.',
-  );
-  error.code = 'auth/operation-not-allowed';
-  throw error;
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  currentUser = PREVIEW_ADMIN;
+  emitAuth();
+  return { user: currentUser };
 };
 export const signInWithRedirect = signInWithPopup;
+
 export const signInWithCustomToken = async () => ({ user: null });
-export const signOut = async () => {};
+
+export const signOut = async () => {
+  currentUser = null;
+  emitAuth();
+};
 
 /* ────────────────────────── firebase/firestore ────────────────────────── */
 

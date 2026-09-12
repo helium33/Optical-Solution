@@ -59,9 +59,95 @@ const punch = (at, method = 'pin') => ({
   verifiedBy: 'preview-fixture',
 });
 
+/* Deterministic, so the preview shows the same history on every reload —
+   a dashboard whose numbers reshuffle on refresh is impossible to judge. */
+const seeded = (seed) => {
+  let state = seed;
+  return () => {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    return state / 2147483648;
+  };
+};
+
+/**
+ * A month of plausible history, so the admin dashboard and the personal
+ * dashboard have something to show.
+ *
+ * Without it the preview held only today's punches, and a 30-day view read
+ * "2% attendance" over a wall of grey — an accurate reading of the data and a
+ * useless demonstration of the product.
+ */
+function buildHistory(now) {
+  const random = seeded(20260912);
+  const rows = [];
+  const DAY = 24 * HOUR;
+
+  for (let daysAgo = 30; daysAgo >= 1; daysAgo -= 1) {
+    const dayDate = new Date(now - daysAgo * DAY);
+    const dayKey = businessDayKey(dayDate, TZ);
+    /* Sunday closed — an attendance chart with no weekly rhythm looks fake. */
+    if (dayDate.getUTCDay() === 0) continue;
+
+    for (const person of STAFF) {
+      if (random() < 0.08) continue; // day off or absence
+
+      const branchShift = BRANCHES[person.branchId].shift;
+      const late = random() < 0.12;
+      const lateBy = late ? 6 + Math.floor(random() * 22) : 0;
+      const claimed = random() < 0.15;
+      const overtimeMinutes = claimed ? 20 + Math.floor(random() * 100) : 0;
+
+      const [startH, startM] = branchShift.start.split(':').map(Number);
+      const checkInAt = new Date(
+        Date.UTC(
+          dayDate.getUTCFullYear(), dayDate.getUTCMonth(), dayDate.getUTCDate(),
+          startH - 7, startM + lateBy,      // Yangon is UTC+6:30
+        ),
+      );
+      const workedMinutes = 450 + Math.floor(random() * 20) + overtimeMinutes;
+      const checkOutAt = new Date(checkInAt.getTime() + (workedMinutes + 60) * 60_000);
+
+      rows.push({
+        id: `${person.branchId}_${dayKey}_${person.id}`,
+        branchId: person.branchId,
+        staffId: person.id,
+        staffName: person.name,
+        role: person.role,
+        dayKey,
+        timezone: TZ,
+        checkIn: punch(checkInAt, person.hasBiometrics ? 'biometric' : 'pin'),
+        checkOut: punch(checkOutAt),
+        status: late ? 'late' : 'on_time',
+        minutes: {
+          gross: workedMinutes + 60,
+          break: 60,
+          worked: workedMinutes,
+          regular: workedMinutes - overtimeMinutes,
+          overtime: overtimeMinutes,
+          overtimeHours: overtimeMinutes > 0 ? Math.ceil(overtimeMinutes / 60) : 0,
+          late: lateBy,
+          earlyLeave: 0,
+        },
+        overtime: {
+          claimed,
+          eligibleMinutes: overtimeMinutes,
+          grantedMinutes: overtimeMinutes,
+          billedHours: overtimeMinutes > 0 ? Math.ceil(overtimeMinutes / 60) : 0,
+          capped: false,
+          reason: null,
+        },
+        shiftSnapshot: branchShift,
+        createdAt: checkInAt.toISOString(),
+        updatedAt: checkOutAt.toISOString(),
+      });
+    }
+  }
+  return rows;
+}
+
 export function buildAttendance() {
   const now = Date.now();
-  const rows = [];
+  const rows = buildHistory(now);
 
   const add = (staffId, branchId, { inAgo, outAgo = null, shift, status = 'on_time', overtime = 0 }) => {
     const person = STAFF.find((s) => s.id === staffId);

@@ -8,12 +8,14 @@ import { AuthProvider } from '../src/Feature/Attendance/auth/AuthProvider';
 import Spinner from '../src/Feature/Attendance/components/ui/Spinner';
 import ThemeToggle from '../src/Feature/Attendance/components/ui/ThemeToggle';
 import SecretAdminDoor from '../src/Feature/Attendance/components/SecretAdminDoor';
+import { RequireAdmin } from '../src/Feature/Attendance/auth/guards';
 
 const KioskGatePage = lazy(() => import('../src/Feature/Attendance/pages/KioskGatePage'));
 const KioskPage = lazy(() => import('../src/Feature/Attendance/pages/KioskPage'));
 const AdminLoginPage = lazy(() => import('../src/Feature/Attendance/pages/AdminLoginPage'));
 const DashboardPreviewPage = lazy(() => import('../src/Feature/Attendance/pages/DashboardPreviewPage'));
 const StaffDashboardPage = lazy(() => import('../src/Feature/Attendance/pages/StaffDashboardPage'));
+const AdminDashboardPage = lazy(() => import('../src/Feature/Attendance/pages/AdminDashboardPage'));
 
 /**
  * The preview shell.
@@ -102,6 +104,14 @@ export default function PreviewApp() {
                 <Route path="/attendance/me" element={<StaffDashboardPage />} />
                 <Route path="/attendance/dashboard" element={<DashboardPreviewPage />} />
                 <Route path="/attendance/admin/login" element={<AdminLoginPage />} />
+                <Route
+                  path="/attendance/admin"
+                  element={
+                    <RequireAdmin>
+                      <AdminDashboardPage />
+                    </RequireAdmin>
+                  }
+                />
                 <Route path="*" element={<Navigate to="/attendance/kiosk" replace />} />
               </Routes>
             </Suspense>

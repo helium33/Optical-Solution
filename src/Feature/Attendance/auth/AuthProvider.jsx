@@ -49,13 +49,31 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [claims, setClaims] = useState(null);
   const [error, setError] = useState(null);
+  /**
+   * WHY the sign-in failed, not just what happened.
+   *
+   *   'rejected' — Google sign-in worked; this account is not an administrator.
+   *   'failed'   — sign-in itself did not happen: provider disabled, popup
+   *                blocked, bad key, no network.
+   *
+   * These were one undifferentiated string, so a Firebase project with the
+   * Google provider switched off told the owner "Not an administrator" and
+   * advised them to switch Google accounts. They would have tried every
+   * account they own before finding the real cause.
+   */
+  const [errorKind, setErrorKind] = useState(null);
   const rejectedEmail = useRef(null);
+
+  const fail = (message) => {
+    setErrorKind('failed');
+    setError(message);
+  };
 
   useEffect(() => {
     if (!isFirebaseConfigured) return undefined;
 
     /* A redirect sign-in resolves here rather than in signIn(). */
-    getRedirectResult(auth).catch((redirectError) => setError(toMessage(redirectError)));
+    getRedirectResult(auth).catch((redirectError) => fail(toMessage(redirectError)));
 
     const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
       if (!nextUser) {
@@ -74,6 +92,7 @@ export function AuthProvider({ children }) {
          would sign the shop tablet straight back out. */
       if (token?.claims?.kiosk === true) {
         rejectedEmail.current = null;
+        setErrorKind(null);
         setError(null);
         setClaims(token.claims);
         setUser(nextUser);
@@ -83,6 +102,7 @@ export function AuthProvider({ children }) {
 
       if (!isAllowlistedAdmin(nextUser.email)) {
         rejectedEmail.current = nextUser.email;
+        setErrorKind('rejected');
         setError(
           `${nextUser.email} is not an administrator account for Optical Solution.`,
         );
@@ -92,6 +112,7 @@ export function AuthProvider({ children }) {
       }
 
       rejectedEmail.current = null;
+      setErrorKind(null);
       setError(null);
       setClaims(token?.claims ?? null);
 
@@ -114,9 +135,10 @@ export function AuthProvider({ children }) {
 
   const signIn = useCallback(async () => {
     if (!isFirebaseConfigured) {
-      setError('Firebase is not configured. Copy .env.example to .env and fill it in.');
+      fail('Firebase is not configured. Copy .env.example to .env and fill it in.');
       return;
     }
+    setErrorKind(null);
     setError(null);
     rejectedEmail.current = null;
     try {
@@ -134,12 +156,13 @@ export function AuthProvider({ children }) {
         return;
       }
       if (code === 'auth/popup-closed-by-user') return; // not an error worth showing
-      setError(toMessage(popupError));
+      fail(toMessage(popupError));
     }
   }, []);
 
   const signOut = useCallback(async () => {
     rejectedEmail.current = null;
+    setErrorKind(null);
     setError(null);
     await firebaseSignOut(auth).catch(() => {});
   }, []);
@@ -166,6 +189,7 @@ export function AuthProvider({ children }) {
       principal,
       claims,
       error,
+      errorKind,
       signIn,
       signOut,
       allowlist: ADMIN_EMAILS,
@@ -174,7 +198,7 @@ export function AuthProvider({ children }) {
       isKiosk: status === AUTH_STATUS.KIOSK,
       kioskBranchId: status === AUTH_STATUS.KIOSK ? (claims?.branchId ?? null) : null,
     }),
-    [status, user, principal, claims, error, signIn, signOut],
+    [status, user, principal, claims, error, errorKind, signIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -182,6 +206,14 @@ export function AuthProvider({ children }) {
 
 function toMessage(error) {
   const code = error?.code ?? '';
+  if (code === 'auth/operation-not-allowed') {
+    /* The single most likely cause on a fresh project, and the one that used
+       to masquerade as "you used the wrong account". */
+    return 'Google sign-in is not switched on for this Firebase project. Enable it in Authentication → Sign-in method → Google, then try again.';
+  }
+  if (code === 'auth/popup-blocked') {
+    return 'The browser blocked the sign-in window. Allow pop-ups for this site, or try again — it will fall back to a redirect.';
+  }
   if (code === 'auth/network-request-failed') return 'No connection. Check the network and try again.';
   if (code === 'auth/unauthorized-domain') {
     return 'This domain is not in the Firebase Auth authorised list. Add it in Authentication → Settings.';
