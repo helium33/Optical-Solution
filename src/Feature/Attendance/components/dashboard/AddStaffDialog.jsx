@@ -6,6 +6,7 @@ import Spinner from '../ui/Spinner';
 import { BRANCH_LIST, BRANCHES } from '../../config/branches';
 import { STAFF_ROLE_ORDER, ROLE_META, roleLabel } from '../../config/roles';
 import { createStaff, setStaffPin } from '../../services/staff.service';
+import { ADMIN_SEQUENCE } from '../../services/adminReveal';
 
 /**
  * Add an employee.
@@ -52,7 +53,12 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
     const list = [];
     if (!form.name.trim()) list.push('Name is required.');
     if (!/^\d{4}$/.test(form.pin)) list.push('The PIN must be exactly 4 digits.');
-    else if (form.pin !== form.pinConfirm) list.push('The two PINs do not match.');
+    else if (form.pin === ADMIN_SEQUENCE) {
+      /* This one is reserved: it is the sequence that reveals the administrator
+         sign-in, and it is listened for on every screen. Issued as a personal
+         PIN, this person would open the admin door every time they clocked in. */
+      list.push('That PIN is reserved by the system. Choose another.');
+    } else if (form.pin !== form.pinConfirm) list.push('The two PINs do not match.');
     return list;
   }, [form]);
 

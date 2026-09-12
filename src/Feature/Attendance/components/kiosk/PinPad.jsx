@@ -1,7 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { LuDelete } from 'react-icons/lu';
 
-import { acquirePinEntry } from '../../services/pinEntryLock';
 
 /**
  * Numeric keypad.
@@ -23,10 +22,6 @@ export default function PinPad({ value, onChange, length = 6, disabled = false, 
     },
     [disabled, length, onChange, value],
   );
-
-  /* Announce that a pad is open, so the secret admin sequence stops listening
-     for digits while someone is entering a PIN. */
-  useEffect(() => acquirePinEntry(), []);
 
   /* Physical keyboard parity. */
   useEffect(() => {

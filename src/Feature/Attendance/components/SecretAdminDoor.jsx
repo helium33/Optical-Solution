@@ -2,31 +2,37 @@ import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useSecretSequence } from '../hooks/useSecretSequence';
-import { usePinEntryOpen } from '../services/pinEntryLock';
 import { ADMIN_SEQUENCE, revealAdmin } from '../services/adminReveal';
 
 /**
  * Renders nothing. Listens for the sequence that reveals the administrator
  * sign-in, and navigates there when it hears it.
  *
- * Its own component rather than a few lines inside the layout, because the
- * preview harness mounts its own provider stack and would otherwise silently
- * not have it — which is exactly how a feature ends up looking broken in the
- * one place anyone is looking at it.
+ * It listens on EVERY screen, including the ones with a PIN pad open.
  *
- * Inert while a PIN pad is open: the kiosk keypad also listens for digits, and
- * a staff member whose personal PIN happens to be 7860 must not reveal the
- * admin door by clocking in.
+ * An earlier version switched itself off whenever a pad was on screen, to stop
+ * a staff member whose personal PIN happened to be 7860 from revealing the
+ * admin door by clocking in. That solved a narrow problem by breaking the
+ * common case: the unlock screen is the first thing on the tablet and the most
+ * natural place for an owner to type the sequence, and there it did nothing at
+ * all.
+ *
+ * The collision is now closed where it actually belongs — at PIN assignment.
+ * The admin sequence is refused as a staff or branch PIN (see AddStaffDialog
+ * and scripts/seed-pins.mjs), so no real PIN can ever collide with it, and the
+ * shortcut works from anywhere.
+ *
+ * Keystrokes typed into a real field — a name, a reason, a search box — are
+ * still ignored, so entering "7860" as data does not trip it.
  */
 export default function SecretAdminDoor() {
   const navigate = useNavigate();
-  const pinEntryOpen = usePinEntryOpen();
 
   const open = useCallback(() => {
     revealAdmin();
     navigate('/attendance/admin/login');
   }, [navigate]);
 
-  useSecretSequence(ADMIN_SEQUENCE, open, { enabled: !pinEntryOpen });
+  useSecretSequence(ADMIN_SEQUENCE, open);
   return null;
 }

@@ -397,15 +397,28 @@ allowlist, and the Firestore rules behind it. **This hides a door; it does not
 lock one.** The reveal expires after 10 minutes so a shared tablet is not left
 standing open.
 
-Two details that matter more than they look:
+It listens on **every screen**, including the ones with a PIN pad open — the
+unlock screen is the first thing on the tablet and the most natural place for an
+owner to type the sequence.
 
-- The listener is **inert while a PIN pad is open**. The kiosk keypad also
-  listens for digits, and a staff member whose personal PIN happens to be 7860
-  would otherwise reveal the admin door every time they clocked in.
-  `services/pinEntryLock.js` is what coordinates that.
-- It never stores, logs or transmits anything. The buffer holds at most four
-  characters, clears on match and clears again after a pause. It is not a
-  keylogger and must not be turned into one by "debugging" it with a log line.
+There is an obvious collision to worry about: the kiosk keypad also listens for
+digits, so a staff member whose personal PIN happened to be `7860` would open the
+admin door every time they clocked in. That is closed **at PIN assignment**, not
+by switching the listener off — `7860` is refused as a staff or branch PIN by
+both `AddStaffDialog` and `scripts/seed-pins.mjs`, so no real PIN can collide
+with it.
+
+(An earlier version disabled the listener whenever a pad was on screen. It
+solved the narrow problem by breaking the common case: on the unlock screen, the
+shortcut did nothing at all. Fixing the collision at its source is what let the
+shortcut work everywhere.)
+
+Keystrokes typed into a real field — an employee name, a correction reason, a
+search box — are still ignored, so entering "7860" as *data* does not trip it.
+
+It never stores, logs or transmits anything. The buffer holds at most four
+characters, clears on match and clears again after a pause. It is not a
+keylogger and must not be turned into one by "debugging" it with a log line.
 
 ---
 

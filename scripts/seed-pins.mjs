@@ -38,6 +38,7 @@ import readline from 'node:readline';
 /* firebase-admin is imported lazily, after the dry-run exit, so `--dry-run`
    works on a machine that has not installed it — which is how you check a PIN
    before committing to touching a live database. */
+import { ADMIN_SEQUENCE } from '../src/Feature/Attendance/services/adminReveal.js';
 import { createPinRecord } from '../src/Feature/Attendance/lib/crypto.js';
 import { BRANCH_LIST, BRANCH_IDS } from '../src/Feature/Attendance/config/branches.js';
 
@@ -60,6 +61,9 @@ const fail = (message) => {
  */
 function weaknessOf(pin) {
   if (!/^\d{4,8}$/.test(pin)) return 'must be 4-8 digits';
+  if (pin === ADMIN_SEQUENCE) {
+    return 'RESERVED — this is the sequence that reveals the admin sign-in; pick another';
+  }
   if (/^(\d)\1+$/.test(pin)) return 'every digit is the same — among the most-guessed PINs there are';
   const digits = [...pin].map(Number);
   const ascending = digits.every((d, i) => i === 0 || d === digits[i - 1] + 1);
