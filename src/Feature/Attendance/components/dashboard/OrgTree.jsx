@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { LuChevronRight, LuFingerprint, LuUserPlus } from 'react-icons/lu';
+import { LuChevronRight, LuFingerprint, LuUserPlus, LuSettings } from 'react-icons/lu';
 
 import Avatar from '../ui/Avatar';
 import StatusPill from '../ui/StatusPill';
 import { STAFF_ROLE_ORDER, roleLabel } from '../../config/roles';
-import { BRANCHES } from '../../config/branches';
+import { useBranches } from '../../config/BranchesProvider';
 import { formatClock } from '../../lib/time';
 
 /**
@@ -24,7 +24,7 @@ import { formatClock } from '../../lib/time';
 
 const TIERS = [...STAFF_ROLE_ORDER].reverse(); // supervisor first
 
-export default function OrgTree({ staff, logs = [], branchIds, onSelect, onAdd, timezone }) {
+export default function OrgTree({ staff, logs = [], branchIds, onSelect, onAdd, onSettings, timezone }) {
   const byBranch = useMemo(() => {
     const map = new Map(branchIds.map((id) => [id, []]));
     for (const person of staff) {
@@ -49,6 +49,7 @@ export default function OrgTree({ staff, logs = [], branchIds, onSelect, onAdd, 
           logByStaff={logByStaff}
           onSelect={onSelect}
           onAdd={onAdd}
+          onSettings={onSettings}
           timezone={timezone}
         />
       ))}
@@ -56,9 +57,10 @@ export default function OrgTree({ staff, logs = [], branchIds, onSelect, onAdd, 
   );
 }
 
-function BranchTree({ branchId, people, logByStaff, onSelect, onAdd, timezone }) {
+function BranchTree({ branchId, people, logByStaff, onSelect, onAdd, onSettings, timezone }) {
   const [open, setOpen] = useState(true);
-  const branch = BRANCHES[branchId];
+  const { get } = useBranches();
+  const branch = get(branchId);
 
   const tiers = useMemo(
     () =>
@@ -91,12 +93,26 @@ function BranchTree({ branchId, people, logByStaff, onSelect, onAdd, timezone })
             <span className="block truncate text-[15px] font-bold tracking-tight text-ink">
               {branch?.name ?? branchId}
             </span>
-            <span className="block text-xs text-ink-subtle">
+            <span className="block text-xs text-ink-subtle tabular">
               {people.length} {people.length === 1 ? 'person' : 'people'} ·{' '}
-              {tiers.length} {tiers.length === 1 ? 'tier' : 'tiers'}
+              {branch?.shift ? `${branch.shift.start}–${branch.shift.end}` : `${tiers.length} tiers`}
+              {branch?.shift?.graceMinutes != null
+                ? ` · ${branch.shift.graceMinutes} min grace`
+                : ''}
             </span>
           </span>
         </button>
+
+        {onSettings ? (
+          <button
+            type="button"
+            onClick={() => onSettings(branch)}
+            aria-label={`${branch?.name ?? branchId} settings`}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl border border-line bg-surface-card text-ink-subtle shadow-soft transition-colors hover:border-brand-500/40 hover:text-brand-ink"
+          >
+            <LuSettings className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ) : null}
 
         {onAdd ? (
           <button

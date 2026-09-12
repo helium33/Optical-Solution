@@ -6,7 +6,7 @@ import PinPad from '../components/kiosk/PinPad';
 import ThemeToggle from '../components/ui/ThemeToggle';
 import Spinner from '../components/ui/Spinner';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
-import { BRANCH_LIST, getBranch } from '../config/branches';
+import { useBranches } from '../config/BranchesProvider';
 import { unlockKiosk } from '../services/verification.service';
 import { openKioskSession } from '../services/kioskSession';
 
@@ -31,7 +31,8 @@ export default function KioskGatePage() {
   /* A ref, not the state, guards re-entry: state is a render behind. */
   const busyRef = useRef(false);
 
-  const branch = useMemo(() => (selected ? getBranch(selected) : null), [selected]);
+  const { branches: BRANCH_LIST, get } = useBranches();
+  const branch = useMemo(() => (selected ? get(selected) : null), [selected, get]);
 
   /* Theme follows the selection, and resets to neutral when backing out. */
   useEffect(() => {

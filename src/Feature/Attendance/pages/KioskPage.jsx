@@ -9,7 +9,7 @@ import Spinner from '../components/ui/Spinner';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useGeoFence } from '../hooks/useGeoFence';
 import { useNow } from '../hooks/useNow';
-import { getBranch } from '../config/branches';
+import { useBranch } from '../config/BranchesProvider';
 import { subscribeBranchStaff } from '../services/staff.service';
 import { subscribeDayBoard } from '../services/attendance.service';
 import { readKioskSession, closeKioskSession, touchKioskSession } from '../services/kioskSession';
@@ -28,7 +28,9 @@ export default function KioskPage() {
   const navigate = useNavigate();
   const { setBranch } = useBranchTheme();
 
-  const branch = useMemo(() => getBranch(branchId), [branchId]);
+  /* Live config: an owner changing the shift end must reach this tablet
+     without a redeploy. */
+  const branch = useBranch(branchId);
   const now = useNow(30_000);
   const dayKey = useMemo(
     () => (branch ? businessDayKey(now, branch.timezone) : null),

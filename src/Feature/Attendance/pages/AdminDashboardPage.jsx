@@ -14,13 +14,15 @@ import AttendanceTable from '../components/dashboard/AttendanceTable';
 import OrgTree from '../components/dashboard/OrgTree';
 import AddStaffDialog from '../components/dashboard/AddStaffDialog';
 import StaffDetailDialog from '../components/dashboard/StaffDetailDialog';
+import BranchSettingsDialog from '../components/dashboard/BranchSettingsDialog';
 import Segmented from '../components/ui/Segmented';
 
 import { useAuth } from '../auth/AuthProvider';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useAttendanceReport, resolveRange } from '../hooks/useAttendanceReport';
 import { subscribeAllStaffIncludingInactive } from '../services/staff.service';
-import { BRANCHES, BRANCH_IDS, getBranch } from '../config/branches';
+import { BRANCHES, BRANCH_IDS } from '../config/branches';
+import { useBranches } from '../config/BranchesProvider';
 import { formatDuration, toDecimalHours, businessDayKey } from '../lib/time';
 
 /**
@@ -46,8 +48,10 @@ export default function AdminDashboardPage() {
   const [view, setView] = useState('overview');
   const [addingTo, setAddingTo] = useState(null);
   const [detailFor, setDetailFor] = useState(null);
+  const [settingsFor, setSettingsFor] = useState(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
+  const { get: getBranch } = useBranches();
   const branch = filters.branchId === 'all' ? null : getBranch(filters.branchId);
   const timezone = branch?.timezone ?? 'Asia/Yangon';
 
@@ -184,7 +188,8 @@ export default function AdminDashboardPage() {
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-ink-muted">
                 Grouped by seniority: Supervisor, then Sales Leader, Sales Executive and Sales
-                Associate. Tap anyone to correct a day or take them off the system.
+                Associate. Tap anyone to correct a day or take them off the system; use the gear
+                on a branch to change its shift, grace windows and radius.
               </p>
             </header>
 
@@ -195,6 +200,7 @@ export default function AdminDashboardPage() {
               timezone={timezone}
               onSelect={setDetailFor}
               onAdd={setAddingTo}
+              onSettings={setSettingsFor}
             />
           </section>
         ) : (
@@ -262,6 +268,13 @@ export default function AdminDashboardPage() {
         actor={principal}
         onClose={() => setAddingTo(null)}
         onAdded={() => setRefreshNonce((n) => n + 1)}
+      />
+
+      <BranchSettingsDialog
+        open={Boolean(settingsFor)}
+        branch={settingsFor}
+        actor={principal}
+        onClose={() => setSettingsFor(null)}
       />
 
       <StaffDetailDialog

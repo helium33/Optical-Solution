@@ -4,9 +4,11 @@ import { LuX } from 'react-icons/lu';
 /**
  * Centred glass dialog.
  *
- * Handles the three things a hand-rolled modal usually forgets: Escape closes
- * it, focus moves inside on open and returns to the trigger on close, and the
- * page behind it cannot scroll.
+ * Handles the four things a hand-rolled modal usually forgets: Escape closes
+ * it, focus moves inside on open and returns to the trigger on close, the page
+ * behind it cannot scroll, and — the one that bites late — the panel is capped
+ * in height and scrolls its own body, so a long form's submit button is never
+ * stranded below the fold.
  */
 export default function Modal({ open, onClose, title, subtitle, children, size = 'md' }) {
   const panelRef = useRef(null);
@@ -53,9 +55,13 @@ export default function Modal({ open, onClose, title, subtitle, children, size =
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative w-full ${width} glass-strong glass-sheen animate-fade-up rounded-t-4xl border-line/60 shadow-float outline-none sm:rounded-4xl`}
+        /* Capped and scrollable. A tall dialog — branch settings has five
+           sections — otherwise runs off the bottom of a laptop screen with its
+           own Save button below the fold and no way to reach it. The header
+           stays pinned so you always know what you are editing. */
+        className={`relative flex max-h-[92dvh] w-full flex-col ${width} glass-strong glass-sheen animate-fade-up rounded-t-4xl border-line/60 shadow-float outline-none sm:max-h-[88dvh] sm:rounded-4xl`}
       >
-        <div className="flex items-start justify-between gap-4 p-6 pb-4">
+        <div className="flex shrink-0 items-start justify-between gap-4 p-6 pb-4">
           <div className="min-w-0">
             {title ? <h2 className="text-lg font-bold tracking-tight text-ink">{title}</h2> : null}
             {subtitle ? <p className="mt-1 text-sm text-ink-muted">{subtitle}</p> : null}
@@ -69,7 +75,9 @@ export default function Modal({ open, onClose, title, subtitle, children, size =
             <LuX className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div className="px-6 pb-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6">
+          {children}
+        </div>
       </div>
     </div>
   );

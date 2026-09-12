@@ -3,6 +3,7 @@ import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 
 import { LuFlaskConical, LuGlasses, LuChartColumn, LuUserRound } from 'react-icons/lu';
 
 import { BranchThemeProvider } from '../src/Feature/Attendance/theme/BranchThemeProvider';
+import { BranchesProvider } from '../src/Feature/Attendance/config/BranchesProvider';
 import { AuthProvider } from '../src/Feature/Attendance/auth/AuthProvider';
 import Spinner from '../src/Feature/Attendance/components/ui/Spinner';
 import ThemeToggle from '../src/Feature/Attendance/components/ui/ThemeToggle';
@@ -82,6 +83,7 @@ export default function PreviewApp() {
   return (
     <BranchThemeProvider>
       <AuthProvider>
+        <BranchesProvider>
         <div className="attendance-root">
           <MemoryRouter initialEntries={['/attendance/kiosk']}>
             <SecretAdminDoor />
@@ -105,6 +107,7 @@ export default function PreviewApp() {
             </Suspense>
           </MemoryRouter>
         </div>
+        </BranchesProvider>
       </AuthProvider>
     </BranchThemeProvider>
   );

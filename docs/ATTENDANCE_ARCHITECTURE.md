@@ -422,6 +422,45 @@ keylogger and must not be turned into one by "debugging" it with a log line.
 
 ---
 
+## 4d. Branch settings are live, not compiled in
+
+Shift times, grace windows and the geofence radius are editable from the admin
+dashboard (Team → the gear on a branch card).
+
+For that to mean anything, the app had to stop reading them out of
+`config/branches.js`. Every screen used to take the shift from a file compiled
+into the bundle, which made a settings editor pointless by construction: an
+owner could change the shift end, save it, and the kiosk would carry on using
+whatever was built into the JavaScript.
+
+`config/BranchesProvider.jsx` now holds one Firestore subscription for the whole
+app and hands live records to the kiosk, the punch dialog, the personal
+dashboard and the correction form. The static file remains as the **offline
+fallback** — if Firestore is unreachable the kiosk still knows where the shop is
+and when the shift ends, rather than going blank.
+
+Verified end to end: editing Win's shift end in the dashboard changes what the
+kiosk gate displays, with no reload and no redeploy.
+
+### Editing settings does not rewrite history
+
+Every attendance record freezes the shift it was punched against in
+`shiftSnapshot`. Tightening the grace window tomorrow cannot retroactively make
+yesterday's arrivals late, and a correction made in March uses March's shift,
+not today's. The settings dialog says so on screen, because the opposite is
+exactly what an owner would fear before pressing Save.
+
+### One limitation in development
+
+Reading `branches/{id}` requires either an admin session or a kiosk custom
+token. On the `VITE_ALLOW_CLIENT_PUNCH` fallback path the kiosk never
+authenticates, so branch reads are denied and it stays on the compiled-in
+config. An admin editing settings will see their own change; the kiosk will not
+pick it up until the `verifyBranchPin` function is deployed and the tablet holds
+a real token.
+
+---
+
 ## 5. Role-Based Access Control
 
 `Supervisor > Sales Leader > Sales Executive > Sales Associate`, with Admin

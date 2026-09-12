@@ -12,7 +12,7 @@ import Segmented from '../components/ui/Segmented';
 import PinPad from '../components/kiosk/PinPad';
 
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
-import { getBranch } from '../config/branches';
+import { useBranch } from '../config/BranchesProvider';
 import { roleLabel } from '../config/roles';
 import { subscribeBranchStaff } from '../services/staff.service';
 import { verifyStaffPin, fetchStaffSummary } from '../services/staffSummary.service';
@@ -39,7 +39,7 @@ export default function StaffDashboardPage() {
   const { setBranch } = useBranchTheme();
 
   const session = useMemo(() => readKioskSession(), []);
-  const branch = useMemo(() => (session ? getBranch(session.branchId) : null), [session]);
+  const branch = useBranch(session?.branchId);
 
   const [staff, setStaff] = useState(null);
   const [selected, setSelected] = useState(null);

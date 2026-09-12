@@ -7,7 +7,7 @@ import Modal from '../ui/Modal';
 import Spinner from '../ui/Spinner';
 import Avatar from '../ui/Avatar';
 import { roleLabel } from '../../config/roles';
-import { BRANCHES } from '../../config/branches';
+import { useBranches } from '../../config/BranchesProvider';
 import { fetchLog, amendPunchTimes } from '../../services/attendance.service';
 import { removeStaff, restoreStaff, deleteStaffPermanently } from '../../services/staff.service';
 import { businessDayKey, formatClock, formatDuration, formatDayLabel } from '../../lib/time';
@@ -29,7 +29,8 @@ import { businessDayKey, formatClock, formatDuration, formatDayLabel } from '../
 const DANGER = { NONE: 'none', REMOVE: 'remove', DELETE: 'delete' };
 
 export default function StaffDetailDialog({ open, onClose, person, actor, onChanged }) {
-  const branch = person ? BRANCHES[person.branchId] : null;
+  const { get } = useBranches();
+  const branch = person ? get(person.branchId) : null;
   const timezone = branch?.timezone ?? 'Asia/Yangon';
 
   const [dayKey, setDayKey] = useState(() => businessDayKey(new Date(), timezone));

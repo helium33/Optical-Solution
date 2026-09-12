@@ -9,6 +9,7 @@ import AttendanceTable from '../components/dashboard/AttendanceTable';
 import OrgTree from '../components/dashboard/OrgTree';
 import AddStaffDialog from '../components/dashboard/AddStaffDialog';
 import StaffDetailDialog from '../components/dashboard/StaffDetailDialog';
+import BranchSettingsDialog from '../components/dashboard/BranchSettingsDialog';
 import ThemeToggle from '../components/ui/ThemeToggle';
 import Segmented from '../components/ui/Segmented';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
@@ -117,6 +118,7 @@ export default function DashboardPreviewPage() {
   const [view, setView] = useState('overview');
   const [addingTo, setAddingTo] = useState(null);
   const [detailFor, setDetailFor] = useState(null);
+  const [settingsFor, setSettingsFor] = useState(null);
 
   const { keys, roster, rows: allRows } = useMemo(buildFixture, []);
 
@@ -253,6 +255,13 @@ export default function DashboardPreviewPage() {
             timezone="Asia/Yangon"
             onSelect={setDetailFor}
             onAdd={setAddingTo}
+            onSettings={setSettingsFor}
+          />
+          <BranchSettingsDialog
+            open={Boolean(settingsFor)}
+            branch={settingsFor}
+            actor={{ uid: 'preview-admin' }}
+            onClose={() => setSettingsFor(null)}
           />
           <AddStaffDialog
             open={Boolean(addingTo)}

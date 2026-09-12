@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { Outlet } from 'react-router-dom';
 
 import { BranchThemeProvider } from '../theme/BranchThemeProvider';
+import { BranchesProvider } from '../config/BranchesProvider';
 import { AuthProvider } from '../auth/AuthProvider';
 import Spinner from '../components/ui/Spinner';
 import DevModeBanner from '../components/ui/DevModeBanner';
@@ -23,6 +24,7 @@ export default function AttendanceLayout() {
   return (
     <BranchThemeProvider>
       <AuthProvider>
+        <BranchesProvider>
         <div className="attendance-root">
           <DevModeBanner />
           <SecretAdminDoor />
@@ -36,6 +38,7 @@ export default function AttendanceLayout() {
             <Outlet />
           </Suspense>
         </div>
+        </BranchesProvider>
       </AuthProvider>
     </BranchThemeProvider>
   );
