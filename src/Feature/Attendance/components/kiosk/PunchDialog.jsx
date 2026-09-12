@@ -11,6 +11,7 @@ import { useNow } from '../../hooks/useNow';
 import { submitPunch, PUNCH, AUTH_METHOD } from '../../services/attendance.service';
 import { INTENT, ACCESS } from '../../lib/accessPolicy';
 import { BYPASS_TAG } from '../../config/devMode';
+import { ADMIN_SEQUENCE } from '../../services/adminReveal';
 import { computeWorkSession, formatClock, formatDuration } from '../../lib/time';
 import { roleLabel } from '../../config/roles';
 
@@ -171,6 +172,12 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
     (next) => {
       setError(null);
       setPin(next);
+      /* The reserved admin sequence is never a PIN. SecretAdminDoor is already
+         navigating away; submitting it as well would flash "that is not the
+         PIN" on the way out, which is exactly what the reveal looked like
+         before. It is refused at assignment, so this can never swallow a real
+         person's PIN. */
+      if (next === ADMIN_SEQUENCE) return;
       if (next.length === pinLength) send({ method: AUTH_METHOD.PIN, pin: next });
     },
     [pinLength, send],

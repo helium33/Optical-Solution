@@ -17,6 +17,7 @@ import { roleLabel } from '../config/roles';
 import { subscribeBranchStaff } from '../services/staff.service';
 import { verifyStaffPin, fetchStaffSummary } from '../services/staffSummary.service';
 import { readKioskSession } from '../services/kioskSession';
+import { ADMIN_SEQUENCE } from '../services/adminReveal';
 import { resolveRange, RANGE_PRESETS } from '../hooks/useAttendanceReport';
 import { formatDayLabel, formatClock, formatDuration } from '../lib/time';
 
@@ -136,6 +137,12 @@ export default function StaffDashboardPage() {
     (next) => {
       setError(null);
       setPin(next);
+      /* The reserved admin sequence is never a PIN. SecretAdminDoor is already
+         navigating away; submitting it as well would flash "that is not the
+         PIN" on the way out, which is exactly what the reveal looked like
+         before. It is refused at assignment, so this can never swallow a real
+         person's PIN. */
+      if (next === ADMIN_SEQUENCE) return;
       if (next.length === 4) submitPin(next);
     },
     [submitPin],

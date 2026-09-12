@@ -1,6 +1,8 @@
 import { useCallback, useEffect } from 'react';
 import { LuDelete } from 'react-icons/lu';
 
+import { pushSequenceChar } from '../../services/keySequence';
+
 
 /**
  * Numeric keypad.
@@ -18,22 +20,32 @@ export default function PinPad({ value, onChange, length = 6, disabled = false, 
       if (key === 'back') return onChange(value.slice(0, -1));
       if (key === 'clear') return onChange('');
       if (value.length >= length) return undefined;
+
+      /* A tap counts as a character entered, exactly as a keystroke does.
+         Without this the secret admin sequence is unusable on a tablet, which
+         has no keyboard — the only device this kiosk actually runs on. */
+      pushSequenceChar(key);
+
       return onChange(value + key);
     },
     [disabled, length, onChange, value],
   );
 
-  /* Physical keyboard parity. */
+  /* Physical keyboard parity. Note `press` already publishes to the sequence
+     bus, and useSecretSequence publishes window keystrokes too — so a typed
+     digit would arrive twice. Route typed digits through onChange directly to
+     keep exactly one publication per character. */
   useEffect(() => {
     const onKeyDown = (event) => {
       if (disabled) return;
-      if (/^\d$/.test(event.key)) press(event.key);
-      else if (event.key === 'Backspace') press('back');
+      if (/^\d$/.test(event.key)) {
+        if (value.length < length) onChange(value + event.key);
+      } else if (event.key === 'Backspace') press('back');
       else if (event.key === 'Escape') press('clear');
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [disabled, press]);
+  }, [disabled, press, value, length, onChange]);
 
   return (
     <div>

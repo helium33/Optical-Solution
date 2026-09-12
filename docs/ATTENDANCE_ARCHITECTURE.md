@@ -399,7 +399,18 @@ standing open.
 
 It listens on **every screen**, including the ones with a PIN pad open — the
 unlock screen is the first thing on the tablet and the most natural place for an
-owner to type the sequence.
+owner to enter the sequence.
+
+**Taps count, not just keystrokes.** The detector subscribes to
+`services/keySequence.js`, a bus that both the window key handler and the
+on-screen `PinPad` publish to. A key-only listener made the feature unusable on
+the one device it was built for: tapping a keypad fires pointer events, never
+key events, so on a tablet the four taps went into the branch PIN instead and
+came back "that is not the PIN for this branch".
+
+The reserved sequence is also never submitted as a PIN. Without that, entering
+it on a keypad would flash the wrong-PIN error on the way to the admin screen —
+which is what the reveal looked like before the fix.
 
 There is an obvious collision to worry about: the kiosk keypad also listens for
 digits, so a staff member whose personal PIN happened to be `7860` would open the
