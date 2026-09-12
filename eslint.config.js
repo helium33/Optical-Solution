@@ -53,8 +53,8 @@ export default [
     languageOptions: { globals: { __PREVIEW_PINS__: 'readonly' } },
   },
   {
-    // Operator scripts run under node.
-    files: ['scripts/**/*.{js,mjs}'],
+    // Operator scripts and the Vite configs run under node, not in a browser.
+    files: ['scripts/**/*.{js,mjs}', 'vite.config.js', 'vite.preview.config.js'],
     languageOptions: {
       globals: { ...globals.node },
       parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },

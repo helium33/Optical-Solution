@@ -21,6 +21,10 @@ For the attendance app, copy the environment template first:
 cp .env.example .env   # fill in from the Firebase console
 ```
 
+**`/` is the storefront, not the attendance app.** The dev server prints both
+sets of URLs on startup; the kiosk is at `/attendance/kiosk`. On a shop tablet
+set `VITE_DEFAULT_APP=attendance` in `.env` and `/` opens the kiosk directly.
+
 Without it the attendance app still boots and renders every screen — it just
 says, in plain words, that Firebase is not configured.
 
