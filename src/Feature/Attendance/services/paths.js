@@ -12,6 +12,7 @@ export const COLLECTIONS = {
   STAFF: 'staff',
   ATTENDANCE: 'attendance',
   ATTENDANCE_DAILY: 'attendanceDaily',
+  ATTENDANCE_MONTHLY: 'attendanceMonthly',
   AUDIT: 'auditLogs',
 };
 
@@ -29,6 +30,18 @@ export const attendanceDoc = (logId) => doc(db, COLLECTIONS.ATTENDANCE, logId);
 export const attendanceDailyCol = () => collection(db, COLLECTIONS.ATTENDANCE_DAILY);
 export const attendanceDailyDoc = (branchId, dayKey) =>
   doc(db, COLLECTIONS.ATTENDANCE_DAILY, `${branchId}_${dayKey}`);
+
+/**
+ * One document per person per month: `{branchId}_{yyyy-MM}_{staffId}`.
+ *
+ * Deterministic again, for the same reason as the daily log — the trigger that
+ * maintains it can overwrite rather than having to find-then-update, and the
+ * dashboard's "this month, these branches" question is one indexed query
+ * instead of a scan over every punch.
+ */
+export const monthlyCol = () => collection(db, COLLECTIONS.ATTENDANCE_MONTHLY);
+export const monthlyDoc = (branchId, month, staffId) =>
+  doc(db, COLLECTIONS.ATTENDANCE_MONTHLY, `${branchId}_${month}_${staffId}`);
 
 export const auditCol = () => collection(db, COLLECTIONS.AUDIT);
 

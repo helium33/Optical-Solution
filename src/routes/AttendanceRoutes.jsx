@@ -71,11 +71,6 @@ const AttendanceRoutes = [
     },
   },
   {
-    /** Personal dashboard — a staff member's own figures, opened with their PIN. */
-    path: 'me',
-    lazy: page(() => import('../Feature/Attendance/pages/StaffDashboardPage')),
-  },
-  {
     path: 'admin',
     lazy: async () => {
       const [{ default: AdminDashboardPage }, { RequireAdmin }] = await Promise.all([

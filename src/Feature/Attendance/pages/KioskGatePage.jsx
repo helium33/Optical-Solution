@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { LuGlasses, LuArrowRight, LuArrowLeft } from 'react-icons/lu';
 
 import PinPad from '../components/kiosk/PinPad';
 import ThemeToggle from '../components/ui/ThemeToggle';
+import LanguageToggle from '../components/ui/LanguageToggle';
 import Spinner from '../components/ui/Spinner';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useBranches } from '../config/BranchesProvider';
@@ -21,6 +23,7 @@ import { ADMIN_SEQUENCE } from '../services/adminReveal';
  * correctly-themed screen appearing after a correct PIN.
  */
 export default function KioskGatePage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { branchId: branchParam } = useParams();
   const { setBranch } = useBranchTheme();
@@ -74,10 +77,10 @@ export default function KioskGatePage() {
         }
 
         setPin('');
-        setError(messageFor(result.reason));
-      } catch (unexpected) {
+        setError(errorKeyFor(result.reason));
+      } catch {
         setPin('');
-        setError(unexpected?.message ?? 'Something went wrong. Try again.');
+        setError('errors.generic');
       } finally {
         /* Always runs, whatever happened. The spinner cannot outlive the
            request any more. */
@@ -105,7 +108,8 @@ export default function KioskGatePage() {
 
   return (
     <div className="relative grid min-h-dvh place-items-center overflow-hidden bg-surface bg-aurora px-4 py-10">
-      <div className="absolute right-4 top-4 z-10">
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
 
@@ -114,9 +118,9 @@ export default function KioskGatePage() {
           <span className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-3xl bg-brand-600 text-brand-on shadow-glow">
             <LuGlasses className="h-6 w-6" aria-hidden="true" />
           </span>
-          <h1 className="text-2xl font-bold tracking-tight text-ink">Optical Solution</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-ink">{t('kiosk.brand')}</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            {branch ? `Unlock the ${branch.shortName} kiosk` : 'Which shop is this tablet in?'}
+            {branch ? t('kiosk.unlock', { branch: branch.shortName }) : t('kiosk.whichShop')}
           </p>
         </div>
 
@@ -148,14 +152,14 @@ export default function KioskGatePage() {
           <div className="animate-fade-up glass glass-sheen rounded-4xl p-6 shadow-float sm:p-8">
             {busy ? (
               <div className="py-16">
-                <Spinner size={28} label="Unlocking…" />
+                <Spinner size={28} label={t('kiosk.unlocking')} />
               </div>
             ) : (
               <>
                 <PinPad value={pin} onChange={onPinChange} length={4} error={Boolean(error)} />
                 {error ? (
                   <p className="mt-5 text-center text-sm font-semibold text-danger-ink" role="alert">
-                    {error}
+                    {t(error)}
                   </p>
                 ) : null}
                 <button
@@ -164,16 +168,14 @@ export default function KioskGatePage() {
                   className="mt-6 inline-flex w-full items-center justify-center gap-2 text-xs font-semibold text-ink-subtle transition-colors hover:text-ink"
                 >
                   <LuArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                  Choose a different shop
+                  {t('kiosk.chooseAnother')}
                 </button>
               </>
             )}
           </div>
         )}
 
-        <p className="mt-8 text-center text-xs text-ink-subtle">
-          Staff do not need an account. Ask a supervisor for the branch PIN.
-        </p>
+        <p className="mt-8 text-center text-xs text-ink-subtle">{t('kiosk.askSupervisor')}</p>
       </div>
     </div>
   );
@@ -185,19 +187,25 @@ export default function KioskGatePage() {
  * "Cannot reach the server" is useless when the real answer is "nobody has
  * deployed the function that checks PINs yet" — so that case says so, and says
  * what to do about it.
+ *
+ * Returns a translation key rather than a sentence: the message is held in
+ * state, and a sentence frozen at failure time would stay in the old language
+ * after the reader switches to the one they can read.
  */
-function messageFor(reason) {
+function errorKeyFor(reason) {
   switch (reason) {
     case 'rate-limited':
-      return 'Too many attempts. Wait a minute before trying again.';
+      return 'errors.tooManyAttempts';
+    case 'anonymous-disabled':
+      return 'errors.anonymousDisabled';
     case 'not-deployed':
-      return 'PIN checking is not set up on the server yet. Deploy the verifyBranchPin function, or set VITE_ALLOW_CLIENT_PUNCH=true for local testing.';
+      return 'errors.notDeployed';
     case 'timeout':
-      return 'The server did not answer. Check the connection and try again.';
+      return 'errors.timeout';
     case 'unavailable':
-      return 'Cannot reach the server. Check the connection.';
+      return 'errors.noServer';
     default:
-      return 'That is not the PIN for this branch.';
+      return 'errors.wrongBranchPin';
   }
 }
 

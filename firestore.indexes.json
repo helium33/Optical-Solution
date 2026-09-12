@@ -6,8 +6,14 @@
       "collectionGroup": "attendance",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "branchId", "order": "ASCENDING" },
-        { "fieldPath": "dayKey", "order": "DESCENDING" }
+        {
+          "fieldPath": "branchId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayKey",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -15,8 +21,14 @@
       "collectionGroup": "attendance",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "branchId", "order": "ASCENDING" },
-        { "fieldPath": "dayKey", "order": "ASCENDING" }
+        {
+          "fieldPath": "branchId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayKey",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -24,9 +36,18 @@
       "collectionGroup": "staff",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "branchId", "order": "ASCENDING" },
-        { "fieldPath": "active", "order": "ASCENDING" },
-        { "fieldPath": "name", "order": "ASCENDING" }
+        {
+          "fieldPath": "branchId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "active",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -34,8 +55,29 @@
       "collectionGroup": "staff",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "active", "order": "ASCENDING" },
-        { "fieldPath": "name", "order": "ASCENDING" }
+        {
+          "fieldPath": "active",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "fetchMonthlySummary: month == x AND branchId IN [...]",
+      "collectionGroup": "attendanceMonthly",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "month",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "branchId",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],

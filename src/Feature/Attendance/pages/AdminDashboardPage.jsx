@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   LuGlasses, LuLogOut, LuUsers, LuTimer, LuCircleAlert, LuExternalLink,
   LuNetwork,
 } from 'react-icons/lu';
 
 import ThemeToggle from '../components/ui/ThemeToggle';
+import LanguageToggle from '../components/ui/LanguageToggle';
 import Avatar from '../components/ui/Avatar';
 import FilterBar from '../components/dashboard/FilterBar';
 import StatTile from '../components/dashboard/StatTile';
@@ -16,6 +18,7 @@ import OrgTree from '../components/dashboard/OrgTree';
 import AddStaffDialog from '../components/dashboard/AddStaffDialog';
 import StaffDetailDialog from '../components/dashboard/StaffDetailDialog';
 import BranchSettingsDialog from '../components/dashboard/BranchSettingsDialog';
+import MonthlySummary from '../components/dashboard/MonthlySummary';
 import Segmented from '../components/ui/Segmented';
 
 import { useAuth } from '../auth/AuthProvider';
@@ -36,6 +39,7 @@ import { formatDuration, toDecimalHours, businessDayKey } from '../lib/time';
  * wrong when they screenshot a dashboard and send it to the wrong supervisor.
  */
 export default function AdminDashboardPage() {
+  const { t } = useTranslation();
   const { principal, signOut } = useAuth();
   const { setBranch } = useBranchTheme();
 
@@ -52,9 +56,16 @@ export default function AdminDashboardPage() {
   const [settingsFor, setSettingsFor] = useState(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
-  const { get: getBranch } = useBranches();
+  const { get: getBranch, branches: branchList } = useBranches();
   const branch = filters.branchId === 'all' ? null : getBranch(filters.branchId);
   const timezone = branch?.timezone ?? 'Asia/Yangon';
+
+  /* Short names, from live config rather than the compiled-in defaults, so a
+     branch renamed in the settings dialog is renamed in the header too. */
+  const allBranchNames = useMemo(
+    () => branchList.map((entry) => entry.shortName).join(' · '),
+    [branchList],
+  );
 
   /* The dashboard wears the branch it is filtered to. */
   useEffect(() => {
@@ -124,10 +135,11 @@ export default function AdminDashboardPage() {
             </span>
             <div className="min-w-0">
               <h1 className="truncate text-[15px] font-bold leading-tight tracking-tight text-ink">
-                Attendance
+                {t('admin.title')}
               </h1>
               <p className="truncate text-xs text-ink-subtle">
-                {branch ? branch.name : 'Win · Pwint · Yangon'} · {range.label}
+                {branch ? branch.name : allBranchNames}
+                {view === 'overview' ? ` · ${range.label}` : ''}
               </p>
             </div>
           </div>
@@ -139,33 +151,37 @@ export default function AdminDashboardPage() {
             to="/attendance/kiosk"
             className="hidden items-center gap-1.5 rounded-2xl border border-line px-3 py-2 text-xs font-semibold text-ink-muted transition-colors hover:text-ink sm:inline-flex"
           >
-            Open kiosk
+            {t('admin.openKiosk')}
             <LuExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
           </Link>
 
           <Segmented
             size="sm"
-            label="View"
+            label={t('admin.view')}
             options={[
-              { value: 'overview', label: 'Reports' },
-              { value: 'team', label: 'Team' },
+              { value: 'overview', label: t('admin.reports') },
+              { value: 'team', label: t('admin.team') },
+              { value: 'monthly', label: t('admin.monthly') },
             ]}
             value={view}
             onChange={setView}
           />
 
+          <LanguageToggle />
           <ThemeToggle />
 
           <div className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface-card py-1.5 pl-1.5 pr-1.5 shadow-soft">
             <Avatar name={principal?.displayName} seed={principal?.uid} size={32} />
             <span className="hidden min-w-0 max-w-[140px] flex-col leading-tight sm:flex">
               <span className="truncate text-xs font-bold text-ink">{principal?.displayName}</span>
-              <span className="truncate text-[11px] text-ink-subtle">Administrator</span>
+              <span className="truncate text-[11px] text-ink-subtle">
+                {t('roles.admin')}
+              </span>
             </span>
             <button
               type="button"
               onClick={signOut}
-              aria-label="Sign out"
+              aria-label={t('admin.signOut')}
               className="grid h-8 w-8 place-items-center rounded-xl text-ink-subtle transition-colors hover:bg-danger-soft hover:text-danger-ink"
             >
               <LuLogOut className="h-4 w-4" aria-hidden="true" />
@@ -175,9 +191,13 @@ export default function AdminDashboardPage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
-        <FilterBar filters={filters} onChange={setFilters} />
+        {/* The date range and the overtime switch scope the reports only. On
+            the team tree and the monthly cards they would be inert controls
+            sitting above a month navigator that actually works — two time
+            controls disagreeing is worse than one. */}
+        <FilterBar filters={filters} onChange={setFilters} compact={view !== 'overview'} />
 
-        {report.error ? (
+        {report.error && view === 'overview' ? (
           <p className="mb-6 rounded-2xl bg-danger-soft px-4 py-3 text-sm text-danger-ink" role="alert">
             {report.error}
           </p>
@@ -188,13 +208,9 @@ export default function AdminDashboardPage() {
             <header className="mb-4">
               <h2 className="inline-flex items-center gap-2 text-base font-bold tracking-tight text-ink">
                 <LuNetwork className="h-4 w-4 text-ink-subtle" aria-hidden="true" />
-                Team
+                {t('admin.team')}
               </h2>
-              <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-                Grouped by seniority: Supervisor, then Sales Leader, Sales Executive and Sales
-                Associate. Tap anyone to correct a day or take them off the system; use the gear
-                on a branch to change its shift, grace windows and radius.
-              </p>
+              <p className="mt-1 text-xs leading-relaxed text-ink-muted">{t('admin.teamIntro')}</p>
             </header>
 
             <OrgTree
@@ -207,6 +223,8 @@ export default function AdminDashboardPage() {
               onSettings={setSettingsFor}
             />
           </section>
+        ) : view === 'monthly' ? (
+          <MonthlySummary branchIds={branchIds} roster={activeRoster} timeZone={timezone} />
         ) : (
         <>
         {/* ---- headline figures ---- */}
@@ -215,31 +233,31 @@ export default function AdminDashboardPage() {
         >
           <StatTile
             hero
-            label="Attendance rate"
+            label={t('admin.attendanceRate')}
             value={rate == null ? '—' : `${Math.round(rate * 100)}%`}
             caption={
               rate == null
-                ? 'No roster data for this range'
-                : `${totals.present} of ${totals.expected} expected shifts had a punch`
+                ? t('admin.noRosterData')
+                : t('admin.shiftsWithPunch', { present: totals.present, expected: totals.expected })
             }
             tone="brand"
             icon={LuUsers}
           />
           <StatTile
-            label="Late arrivals"
+            label={t('admin.lateArrivals')}
             value={totals.late}
             caption={
               totals.present
-                ? `${Math.round((totals.late / totals.present) * 100)}% of shifts worked`
-                : 'No shifts in range'
+                ? t('admin.shareOfShifts', { percent: Math.round((totals.late / totals.present) * 100) })
+                : t('admin.noShiftsInRange')
             }
             tone={totals.late ? 'warn' : 'default'}
             icon={LuCircleAlert}
           />
           <StatTile
-            label="Overtime hours"
+            label={t('admin.overtimeHours')}
             value={toDecimalHours(totals.overtimeMinutes)}
-            caption={`${totals.overtimeClaims} ${totals.overtimeClaims === 1 ? 'claim' : 'claims'} · ${formatDuration(totals.overtimeMinutes)}`}
+            caption={`${t('admin.claims', { count: totals.overtimeClaims })} · ${formatDuration(totals.overtimeMinutes)}`}
             tone={totals.overtimeMinutes ? 'ot' : 'default'}
             icon={LuTimer}
           />
@@ -250,12 +268,16 @@ export default function AdminDashboardPage() {
           <AttendanceTrendChart daily={daily} className="lg:col-span-2" />
           <OvertimeBreakdownChart
             items={breakdown}
-            title="Overtime"
-            subtitle={filters.branchId === 'all' ? 'By branch' : `By person · ${branch.shortName}`}
+            title={t('admin.overtime')}
+            subtitle={
+              filters.branchId === 'all'
+                ? t('admin.byBranch')
+                : `${t('admin.byPerson')} · ${branch.shortName}`
+            }
             emptyHint={
               filters.overtimeOnly
-                ? 'The overtime-only filter is on and nothing matched.'
-                : 'Nobody claimed overtime in this range.'
+                ? t('admin.noOvertimeMatched')
+                : t('admin.noOvertimeClaimed')
             }
           />
         </section>

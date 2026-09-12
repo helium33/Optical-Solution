@@ -1,0 +1,96 @@
+rules_version = '2';
+
+/**
+ * ============================================================================
+ *  DEVELOPMENT RULES — NOT FOR A LIVE SHOP
+ *
+ *  Deploy these only while testing, before the Cloud Functions exist.
+ *
+ *  What they give up: the real rules scope a kiosk to one branch using a
+ *  `branchId` claim on a custom token that only a Cloud Function can mint.
+ *  Without Functions the kiosk signs in ANONYMOUSLY, and an anonymous session
+ *  carries no claims at all — so these rules can only ask "is anyone signed
+ *  in?". In practice that means anybody who can reach your Firebase project
+ *  can read every branch's roster and attendance.
+ *
+ *  That is acceptable for a week of testing with fake staff. It is not
+ *  acceptable once real people's hours are in there.
+ *
+ *  HOW TO USE THESE SAFELY
+ *
+ *  This project shares a Firebase project with the storefront, and
+ *  `firebase deploy --only firestore:rules` REPLACES the whole ruleset. So do
+ *  not deploy this file as-is. Copy the `match` blocks below into the
+ *  project's existing rules file, inside its own
+ *  `match /databases/{database}/documents`, and deploy that. Firestore rules
+ *  are OR-ed, so the storefront's own blocks keep working untouched.
+ *
+ *  Also enable: Authentication -> Sign-in method -> Anonymous.
+ *
+ *  When the Functions are deployed, delete these blocks and use
+ *  firestore.rules instead.
+ * ============================================================================
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        request.auth.token.admin == true
+        || (
+          request.auth.token.email_verified == true
+          && request.auth.token.email.lower() in [
+            'kyawwinhtun564@gmail.com',
+            'wpy.muse@gmail.com',
+            'yannaing190792@gmail.com'
+          ]
+        )
+      );
+    }
+
+    match /branches/{branchId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+
+      // Still never readable. A PIN hash must not leak even in development.
+      match /secrets/{secretId} {
+        allow read, write: if false;
+      }
+    }
+
+    match /staff/{staffId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+
+      match /secrets/{secretId} { allow read, write: if false; }
+      match /credentials/{credentialId} { allow read, write: if false; }
+    }
+
+    match /attendance/{logId} {
+      allow read: if signedIn();
+
+      // DEVELOPMENT ONLY: the client writes punches itself, because the
+      // submitPunch function does not exist yet. Every record written this way
+      // is tagged verifiedBy: 'client-unverified' so they can be found and
+      // purged later. In firestore.rules this is `if false`.
+      allow create, update: if signedIn();
+      allow delete: if false;
+    }
+
+    match /attendanceMonthly/{docId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /auditLogs/{entryId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+  }
+}

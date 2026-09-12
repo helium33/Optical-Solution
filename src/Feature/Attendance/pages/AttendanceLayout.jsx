@@ -1,6 +1,11 @@
 import { Suspense } from 'react';
 import { Outlet } from 'react-router-dom';
 
+/* Side-effect import: initialises i18next before any component renders, so
+   the first paint is already in the right language rather than flashing
+   English and then switching. */
+import '../i18n';
+
 import { BranchThemeProvider } from '../theme/BranchThemeProvider';
 import { BranchesProvider } from '../config/BranchesProvider';
 import { AuthProvider } from '../auth/AuthProvider';

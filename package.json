@@ -17,16 +17,20 @@
     "check:env": "node scripts/check-env.mjs",
     "deploy:hosting": "node scripts/check-env.mjs && vite build && firebase deploy --only hosting",
     "deploy:indexes": "firebase deploy --only firestore:indexes",
-    "setup:env": "node scripts/setup-env.mjs"
+    "setup:env": "node scripts/setup-env.mjs",
+    "check:i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
     "firebase": "^12.19.0",
     "framer-motion": "^12.4.10",
+    "i18next": "^26.4.2",
+    "i18next-browser-languagedetector": "^8.2.1",
     "json-server": "^0.17.4",
     "ldrs": "^1.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-i18next": "^17.0.13",
     "react-icons": "^5.5.0",
     "react-loaders": "^3.0.1",
     "react-router-dom": "^7.3.0",

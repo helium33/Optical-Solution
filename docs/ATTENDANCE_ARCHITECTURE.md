@@ -54,12 +54,13 @@ assertion — and a Cloud Function re-derives every verdict before writing.
 | `config/` | `branches.js` (seed + offline fallback), `roles.js`, `firebase.js` |
 | `theme/` | `BranchThemeProvider` — the only thing that touches `<html>` for theming |
 | `auth/` | Google OAuth provider, admin allowlist, RBAC matrix, route guards |
-| `lib/` | Pure functions: `geo`, `network`, `time`, `accessPolicy`, `crypto` |
+| `lib/` | Pure functions: `geo`, `network`, `time`, `monthly`, `accessPolicy`, `crypto` |
 | `hooks/` | `useGeoFence`, `useWebAuthn`, `useAttendanceReport`, `useNow` |
 | `services/` | Firestore reads, callable wrappers, kiosk session, path registry |
+| `i18n/` | i18next setup, `locales/en.json` + `my.json`, month names, policy text |
 | `components/` | `ui/` primitives, `kiosk/`, `dashboard/` |
 | `pages/` | Four screens + the layout + the route error boundary |
-| `__tests__/` | 41 assertions over geo, network and overtime — `npm run test:logic` |
+| `__tests__/` | 58 assertions over geo, network, overtime and the monthly roll-up — `npm run test:logic` |
 
 ---
 
@@ -143,6 +144,20 @@ control. Pressing the toggle is an explicit choice and leaves `system` behind.
 Dark is **selected, not inverted**: each ramp is re-stepped for a near-black
 surface, and dark surfaces carry the branch hue (navy-black for Win, plum-black
 for Pwint) so the shell still reads as the right shop with the lights off.
+
+**Nested branch scopes.** `data-branch` normally lives on `<html>`, but the
+monthly summary shows all three shops on one screen and scopes each group with
+its own `data-branch` div — one attribute on `<html>` cannot express three
+branches. Dark therefore needs the descendant form as well:
+
+```css
+.dark[data-branch='win'],
+.dark [data-branch='win'] { … }
+```
+
+Without the second selector such a div matched only the *light* rule and every
+card inside it stayed white with the lights off. Light needs no equivalent —
+`[data-branch='win']` is unqualified and already matches at any depth.
 
 ### Modern-UI primitives
 
@@ -290,6 +305,49 @@ single `get()` instead of a query.
 Not yet required — the dashboard aggregates client-side, which is fine at three
 shops. Add this when a month query stops being instant.
 
+### `attendanceMonthly/{branchId}_{month}_{staffId}` — the monthly summary
+
+One document per person per month. This is the shape the admin dashboard's
+Monthly tab actually wants, and the one that stays fast when there are three
+years of punches behind it.
+
+```jsonc
+{ "branchId": "win", "month": "2026-09", "staffId": "abc123",
+  "staffName": "Aye Aye Mon", "role": "supervisor",
+
+  "expectedWorkingDays": 11,   // Mon-Sat so far this month
+  "presentDays": 12,           // days with a check-in
+  "absentDays": 0,             // max(0, expected - present)
+
+  "lateDays": 2, "lateMinutes": 28,
+  "workedMinutes": 5460,
+  "overtimeMinutes": 305,      // actually worked past the shift
+  "overtimeHours": 7 }         // BILLED: rounded up per day, then summed
+```
+
+**`overtimeHours` is summed from per-day billed hours, never derived from
+`overtimeMinutes`.** Two 30-minute evenings are two paid hours; rounding the
+60-minute total once gives one, and the shop would underpay. `summariseMonth`
+prefers a row's stored `minutes.overtimeHours` over recomputing it, so the
+figure on the dashboard is the figure the person was paid.
+
+**Two paths, one implementation.** These documents are written by a Cloud
+Function trigger on attendance writes — which does not exist yet, so
+`fetchMonthlySummary` falls back to deriving the same figures from the raw
+`attendance` rows. Both paths call `summariseMonth` in `lib/monthly.js`, so the
+number shown today and the number in the rolled-up document later cannot
+disagree.
+
+**Absent days are honest, not complete.** Without a `schedules` collection this
+counts Monday to Saturday with no punch, so a legitimate day off, annual leave
+or a public holiday reads as an absence. The UI says so on screen rather than
+only here. The fix is a `schedules` collection; until then the figure means
+"days not worked".
+
+Rules: admin-only reads, unlike `attendanceDaily`. A month of somebody's
+attendance and overtime is not something a shop tablet anyone can walk up to
+should be able to read.
+
 ### `auditLogs/{entryId}` — append-only, server-written
 
 ```jsonc
@@ -300,9 +358,10 @@ shops. Add this when a month query stops being instant.
 
 ### Indexes
 
-`firestore.indexes.json` carries four composites — see the file. The key one is
+`firestore.indexes.json` carries five composites — see the file. The key one is
 `attendance(branchId ASC, dayKey DESC)`, which serves the dashboard's
-`branchId IN [...] + dayKey range + orderBy dayKey`.
+`branchId IN [...] + dayKey range + orderBy dayKey`. The monthly summary adds
+`attendanceMonthly(month ASC, branchId ASC)`.
 
 Role and overtime filters are applied **in memory**, on purpose: Firestore would
 need a separate composite per filter combination, and a three-shop month is a
@@ -662,25 +721,76 @@ the refused in-grace claim, and the early-arrival case.
 
 ### In the UI
 
-The Overtime switch is built so it cannot be flipped by accident: a large
-deliberate target, its own fixed orange, positioned away from the confirm
-button. It shows the **exact minutes that will be claimed**, recalculated live,
-before the punch — and when a claim is not available, the switch is disabled
-with the reason spelled out rather than accepting something the server will
-silently zero.
+The punch dialog is **one screen**, and the order on it is the whole design:
+
+```
+who you are  →  what it will record  →  OVERTIME  →  prove it is you (PIN)
+```
+
+The Overtime switch sits **directly above the keypad** because it has to be
+decided *before* the PIN is entered: entering the PIN is the commit, and by then
+the claim is already in the payload. Below the keypad, or on an earlier screen,
+it invites someone to type four digits and only then discover the choice they
+needed to make. While it is eligible but unticked the hint reads "Tap this
+before entering your PIN".
+
+It is also built so it cannot be flipped by accident: a large deliberate target,
+its own fixed orange, positioned away from the keypad's first row. It shows the
+**hours that will be billed**, recalculated live — and when a claim is not
+available, the switch is disabled with the reason spelled out rather than
+accepting something the server will silently zero.
+
+### There is no staff dashboard
+
+A successful punch shows a confirmation and **returns to the roster by itself**
+after 2.8 seconds. A shop tablet is a shared surface; leaving one person's hours
+on screen for the next member of staff to read is not a feature. Everything a
+staff member needs at the moment of punching is already on the confirmation.
+Per-person history lives on the admin dashboard, behind Google sign-in.
+
+One subtlety: the confirmation reads from a `submitted` snapshot frozen at send
+time, not from live state. Derived live, "clocked out" flips back to "welcome
+in" the instant the write lands and the roster re-renders.
 
 ---
 
 ## 8. Dashboard and data visualisation
 
+Three views behind one segmented control: **Reports**, **Team**, **Monthly**.
+
 One filter row — date range first, then branch, role, and an overtime switch —
 scoping **everything** below it. Never per-chart: if two charts can disagree
 about the date range, every read costs a check of which one you are looking at.
+
+On Team and Monthly the filter bar goes **compact**: the date range and the
+overtime switch are dropped, because neither view uses them and the monthly
+cards carry their own month navigator. An inert control beside a working one is
+read as a broken control.
 
 Selecting a branch **re-themes the whole dashboard**. With three shops in one
 table, ambient colour is a constant peripheral answer to "whose numbers are
 these?" — the question people get wrong when they screenshot a dashboard and
 send it to the wrong supervisor.
+
+### Monthly summary
+
+Admin only, and deliberately **not a chart and not a table**. The question it
+answers — "how did each person do this month" — is read one person at a time,
+and a card per person answers it in a glance where a 12-row x 6-column table
+makes you track across a line.
+
+Three figures per card and no more: **Present days** (လာရက်), **Absent days**
+(ပျက်ရက်), **Overtime hours** (Overtime နာရီပေါင်း). Late days are a footnote
+rather than a fourth number — four equal-weight figures stop being scannable,
+and lateness is the least consequential of them.
+
+Cards are grouped by branch, and each group carries its own `data-branch` scope,
+so three shops are three palettes on one screen. Within a group the order is
+seniority, the same as the Team tree — the two views must not present the same
+people in two different sequences.
+
+The month navigator cannot go past the current month, and the Mon–Sat caveat is
+printed under the cards, not buried in this file.
 
 ### Palette — validated, not eyeballed
 
@@ -711,6 +821,55 @@ CSV export carries both `8h 15m` and `8.25` — payroll software wants one, a
 person wants the other, and shipping only one guarantees somebody retypes it.
 
 ---
+
+## 8b. Bilingual — English and Myanmar
+
+Every screen reads in either language, switched by a toggle in the kiosk header,
+the admin header and the sign-in page. `react-i18next` plus
+`i18next-browser-languagedetector`; the choice persists in `localStorage` and
+`document.documentElement.lang` follows it so the browser picks the right font
+and line-breaking.
+
+```
+i18n/
+  index.js        setup + LANGUAGES
+  months.js       month names that do not trust browser ICU
+  policyText.js   turns an access-policy verdict back into a sentence
+  locales/en.json
+  locales/my.json
+```
+
+Four decisions worth stating:
+
+**No plural keys.** Burmese has one CLDR plural category and English has two.
+Writing `_one` / `_other` for a language that does not inflect produces two
+identical strings for a translator to keep in step forever. Counts are
+interpolated into a single form.
+
+**No namespace split.** One `translation` namespace for ~170 keys. Namespaces
+buy lazy-loading, which is worth nothing when the whole file is 6 kB and the
+kiosk is expected to work with the shop Wi-Fi down.
+
+**`lib/` never imports i18next.** `evaluateAccess` is a pure function, so it
+emits `titleKey` / `detailKey` plus the parameters they interpolate, *alongside*
+the English sentence. `usePolicyText` is the single place that turns them back
+into text, so every screen phrases the same verdict identically, and the English
+pair keeps the module testable without a React tree. A message held in state is
+a key, never a frozen sentence — otherwise a failure that happened in English
+stays in English after the reader switches.
+
+**Month names come from a table, not `Intl`.** `Intl.DateTimeFormat('my-MM')`
+silently resolves to `en-US` on any build shipping small-icu — several Android
+WebViews, and the Chromium this project is tested against — so the monthly
+heading came back as "September 2026" for a reader who had chosen Burmese.
+Twelve strings in `months.js` cannot fall back to the wrong language. Digits
+stay Latin: the cards below the heading show `12` and `0` in Latin, and Burmese
+numerals over Latin figures read as two different documents.
+
+`npm run check:i18n` fails the build if the two files drift out of key parity.
+`"Noto Sans Myanmar"` is in the font stack and loaded by all three HTML entry
+points, and `html[lang='my']` gets a looser line-height — Burmese stacks
+diacritics above and below the baseline and 1.5 clips them.
 
 ## 9. What the server still has to provide
 
@@ -902,3 +1061,14 @@ Never enable it anywhere real people use.
 - **No offline punch queue beyond Firestore's own.** Persistence is enabled, so
   a write during a Wi-Fi drop is queued and flushed — but a punch whose
   server-side verification fails on flush surfaces late.
+- **`attendanceMonthly` has no writer yet.** The Cloud Function trigger that
+  maintains the roll-ups is not written, so the Monthly tab derives its figures
+  from the raw rows on every load. Correct, but it is a whole-month read per
+  view; add the trigger before a third year of punches accumulates.
+- **The monthly summary counts Mon–Sat.** Same root cause as "Absent"
+  over-counting above: approved leave and public holidays appear as absences.
+  The caveat is printed under the cards so the reader is not misled.
+- **Burmese translations are unreviewed.** Every key has a Myanmar string and
+  parity is enforced by `npm run check:i18n`, but a native speaker has not read
+  them end to end. The three terms the owner supplied — လာရက်, ပျက်ရက်,
+  Overtime နာရီပေါင်း — are used verbatim.

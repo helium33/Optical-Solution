@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { LuFlaskConical, LuGlasses, LuChartColumn, LuUserRound } from 'react-icons/lu';
+import { LuFlaskConical, LuGlasses, LuChartColumn } from 'react-icons/lu';
+
+import '../src/Feature/Attendance/i18n';
 
 import { BranchThemeProvider } from '../src/Feature/Attendance/theme/BranchThemeProvider';
 import { BranchesProvider } from '../src/Feature/Attendance/config/BranchesProvider';
@@ -14,7 +16,6 @@ const KioskGatePage = lazy(() => import('../src/Feature/Attendance/pages/KioskGa
 const KioskPage = lazy(() => import('../src/Feature/Attendance/pages/KioskPage'));
 const AdminLoginPage = lazy(() => import('../src/Feature/Attendance/pages/AdminLoginPage'));
 const DashboardPreviewPage = lazy(() => import('../src/Feature/Attendance/pages/DashboardPreviewPage'));
-const StaffDashboardPage = lazy(() => import('../src/Feature/Attendance/pages/StaffDashboardPage'));
 const AdminDashboardPage = lazy(() => import('../src/Feature/Attendance/pages/AdminDashboardPage'));
 
 /**
@@ -31,7 +32,6 @@ const AdminDashboardPage = lazy(() => import('../src/Feature/Attendance/pages/Ad
 
 const LINKS = [
   { to: '/attendance/kiosk', label: 'Kiosk', Icon: LuGlasses },
-  { to: '/attendance/me', label: 'My records', Icon: LuUserRound },
   { to: '/attendance/dashboard', label: 'Dashboard', Icon: LuChartColumn },
   /* No Admin link on purpose — that door is meant to be invisible. Type 7860. */
 ];
@@ -101,7 +101,6 @@ export default function PreviewApp() {
                 <Route path="/" element={<Navigate to="/attendance/kiosk" replace />} />
                 <Route path="/attendance/kiosk" element={<KioskGatePage />} />
                 <Route path="/attendance/kiosk/:branchId" element={<KioskPage />} />
-                <Route path="/attendance/me" element={<StaffDashboardPage />} />
                 <Route path="/attendance/dashboard" element={<DashboardPreviewPage />} />
                 <Route path="/attendance/admin/login" element={<AdminLoginPage />} />
                 <Route

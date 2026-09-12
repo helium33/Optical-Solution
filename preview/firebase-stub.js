@@ -26,6 +26,10 @@ const collections = {
   staff: new Map(STAFF.map((s) => [s.id, { ...s }])),
   attendance: new Map(buildAttendance().map((row) => [row.id, { ...row }])),
   attendanceDaily: new Map(),
+  /* Empty on purpose. The roll-ups are written by a Cloud Function that does
+     not exist yet, so the preview exercises the same fall-back the live app
+     takes today: derive the month from the raw attendance rows. */
+  attendanceMonthly: new Map(),
   auditLogs: new Map(),
 };
 
@@ -143,6 +147,22 @@ export const signInWithPopup = async () => {
 export const signInWithRedirect = signInWithPopup;
 
 export const signInWithCustomToken = async () => ({ user: null });
+
+/**
+ * The kiosk signs in anonymously before reading the roster, because Firestore
+ * rules deny an unauthenticated read. Here the store is open, so this only has
+ * to resolve — but it must NOT overwrite `currentUser` when an admin is
+ * already signed in, or opening the kiosk from the preview chrome would
+ * silently sign the admin out of the dashboard behind it.
+ */
+export const signInAnonymously = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  if (!currentUser) {
+    currentUser = { uid: 'preview-anon', isAnonymous: true, getIdTokenResult: async () => ({ claims: {} }) };
+    emitAuth();
+  }
+  return { user: currentUser };
+};
 
 export const signOut = async () => {
   currentUser = null;

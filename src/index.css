@@ -9,11 +9,19 @@
    (see tailwind.config.js). Eight palettes live here — four branches x two
    modes — and nothing else in the app knows a hex code.
 
-   Selector layering (both attributes sit on <html>):
+   Selector layering (`.dark`, and usually `data-branch`, sit on <html>):
      :root                       house light   (admin / "All branches")
      [data-branch="win"]         win light
      .dark                       house dark
      .dark[data-branch="win"]    win dark      (0,2,0 — beats both singles)
+     .dark [data-branch="win"]   win dark, NESTED
+
+   That last one matters. A screen showing all three shops at once — the
+   monthly summary — scopes each group with its own `data-branch` div, and one
+   attribute on <html> cannot express three branches. Without the descendant
+   form such a div matched only the *light* rule, so every card inside it
+   stayed white with the lights off. Light needs no equivalent: its selector is
+   already unqualified and matches at any depth.
 
    Each block re-declares the *complete* token set. Verbose on purpose: a
    partially-declared branch would silently inherit a neighbour's surface and
@@ -166,7 +174,8 @@
   /* ───────────────────────────── WIN · DARK ──────────────────────────────
      Navy-black rather than neutral black — the brand hue bleeds into the
      surface so the shell still reads as "Win" with the lights off. */
-  .dark[data-branch='win'] {
+  .dark[data-branch='win'],
+  .dark [data-branch='win'] {
     --brand-50: 242 242 248;   --brand-100: 227 227 241;  --brand-200: 199 199 227;
     --brand-300: 163 163 208;  --brand-400: 123 120 184;  --brand-500: 91 87 160;
     --brand-600: 69 65 127;    --brand-700: 52 48 101;    --brand-800: 42 37 90;
@@ -193,7 +202,8 @@
 
   /* ──────────────────────────── PWINT · DARK ─────────────────────────────
      The white shop inverted: plum-black surfaces keeping the fuchsia identity. */
-  .dark[data-branch='pwint'] {
+  .dark[data-branch='pwint'],
+  .dark [data-branch='pwint'] {
     --brand-50: 253 244 255;   --brand-100: 250 232 255;  --brand-200: 245 208 254;
     --brand-300: 240 171 252;  --brand-400: 232 121 249;  --brand-500: 217 70 239;
     --brand-600: 192 38 211;   --brand-700: 162 28 175;   --brand-800: 134 25 143;
@@ -220,7 +230,8 @@
 
   /* ─────────────────────────── YANGON · DARK ─────────────────────────────
      In the dark the white accent finally gets to be literally white. */
-  .dark[data-branch='yangon'] {
+  .dark[data-branch='yangon'],
+  .dark [data-branch='yangon'] {
     --brand-50: 254 242 242;   --brand-100: 254 226 226;  --brand-200: 254 202 202;
     --brand-300: 252 165 165;  --brand-400: 248 113 113;  --brand-500: 239 68 68;
     --brand-600: 220 38 38;    --brand-700: 185 28 28;    --brand-800: 153 27 27;
@@ -279,6 +290,13 @@
   /* ───────────────────────────── Base styles ──────────────────────────── */
   html {
     -webkit-text-size-adjust: 100%;
+  }
+
+  /* Burmese stacks diacritics above and below the baseline, so the Latin
+     default line-height clips them and makes dense text unreadable. */
+  html[lang='my'] body,
+  html[lang='my'] .attendance-root {
+    line-height: 1.75;
   }
 
   /* NOTE: the token palette is deliberately NOT applied to <body>.

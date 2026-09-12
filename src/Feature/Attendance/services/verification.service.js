@@ -1,5 +1,5 @@
 import { httpsCallable } from 'firebase/functions';
-import { signInWithCustomToken, signOut } from 'firebase/auth';
+import { signInAnonymously, signInWithCustomToken, signOut } from 'firebase/auth';
 
 import { auth, functions } from '../config/firebase';
 
@@ -68,9 +68,26 @@ export async function unlockKiosk(branchId, pin) {
         '[attendance] verifyBranchPin is not deployed — using the development PIN and an ' +
           'unauthenticated kiosk session. Never ship with VITE_ALLOW_CLIENT_PUNCH enabled.',
       );
-      return pin === DEV_BRANCH_PIN
-        ? { ok: true, ttlMinutes: 840, dev: true }
-        : { ok: false, reason: 'wrong-pin' };
+      if (pin !== DEV_BRANCH_PIN) return { ok: false, reason: 'wrong-pin' };
+
+      /* Without SOME Firebase identity every Firestore read is refused and the
+         kiosk shows an empty roster with "Missing or insufficient permissions".
+         The real path mints a branch-scoped custom token; there is no way to
+         do that from a browser, so the development path signs in anonymously
+         and the development rules accept any signed-in reader.
+         This is weaker than the real thing by design — an anonymous session
+         carries no branch claim, so the rules cannot scope it to one shop. It
+         is a way to run the app before the Functions exist, not a posture to
+         deploy. */
+      try {
+        await signInAnonymously(auth);
+      } catch (anonError) {
+        if (anonError?.code === 'auth/operation-not-allowed') {
+          return { ok: false, reason: 'anonymous-disabled' };
+        }
+        return { ok: false, reason: 'unavailable', message: anonError?.message };
+      }
+      return { ok: true, ttlMinutes: 840, dev: true };
     }
     if (error?.code === 'functions/resource-exhausted') return { ok: false, reason: 'rate-limited' };
     if (error?.code === 'functions/permission-denied') return { ok: false, reason: 'wrong-pin' };

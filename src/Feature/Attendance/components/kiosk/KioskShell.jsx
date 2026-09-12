@@ -1,7 +1,8 @@
-import { LuGlasses, LuLock, LuUserRound } from 'react-icons/lu';
-import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { LuGlasses, LuLock } from 'react-icons/lu';
 
 import ThemeToggle from '../ui/ThemeToggle';
+import LanguageToggle from '../ui/LanguageToggle';
 import GeoStatusPill from './GeoStatusPill';
 import { useNow } from '../../hooks/useNow';
 import { formatClock } from '../../lib/time';
@@ -15,6 +16,7 @@ import { formatClock } from '../../lib/time';
  * stop trusting.
  */
 export default function KioskShell({ branch, geo, onLock, children }) {
+  const { t } = useTranslation();
   const now = useNow(1000);
 
   return (
@@ -37,10 +39,11 @@ export default function KioskShell({ branch, geo, onLock, children }) {
             </span>
             <div className="min-w-0">
               <p className="truncate text-[15px] font-bold leading-tight tracking-tight text-ink">
-                {branch?.name ?? 'Optical Solution'}
+                {branch?.name ?? t('kiosk.brand')}
               </p>
               <p className="truncate text-xs font-medium text-ink-subtle">
-                {branch?.city ? `${branch.city} · ` : ''}Staff attendance
+                {branch?.city ? `${branch.city} · ` : ''}
+                {t('kiosk.staffAttendance')}
               </p>
             </div>
           </div>
@@ -56,22 +59,13 @@ export default function KioskShell({ branch, geo, onLock, children }) {
             >
               {formatClock(now, branch?.timezone ?? 'Asia/Yangon')}
             </time>
-            {/* A staff member's own figures. Reachable from the shop floor
-                because that is where people stand when they wonder how much
-                overtime they are owed. */}
-            <Link
-              to="/attendance/me"
-              aria-label="See my own records"
-              className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface-card text-ink-subtle transition-colors hover:border-brand-500/40 hover:text-brand-ink"
-            >
-              <LuUserRound className="h-4 w-4" aria-hidden="true" />
-            </Link>
+            <LanguageToggle />
             <ThemeToggle />
             {onLock ? (
               <button
                 type="button"
                 onClick={onLock}
-                aria-label="Lock this kiosk"
+                aria-label={t('kiosk.lockKiosk')}
                 className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface-card text-ink-subtle transition-colors hover:text-danger-ink"
               >
                 <LuLock className="h-4 w-4" aria-hidden="true" />

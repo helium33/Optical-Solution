@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { LuUsers, LuTimer, LuCircleCheck, LuTriangleAlert } from 'react-icons/lu';
 
 import KioskShell from '../components/kiosk/KioskShell';
@@ -24,6 +25,7 @@ import { businessDayKey, minutesBetween, ATTENDANCE_STATUS } from '../lib/time';
  * state immediately and nobody double-punches.
  */
 export default function KioskPage() {
+  const { t } = useTranslation();
   const { branchId } = useParams();
   const navigate = useNavigate();
   const { setBranch } = useBranchTheme();
@@ -68,7 +70,7 @@ export default function KioskPage() {
     if (!branchId) return undefined;
     return subscribeBranchStaff(branchId, setStaff, (error) => {
       setStaff([]);
-      setLoadError(error?.message ?? 'Could not load the roster.');
+      setLoadError(error?.message ?? null);
     });
   }, [branchId]);
 
@@ -124,13 +126,13 @@ export default function KioskPage() {
     return (
       <div className="grid min-h-dvh place-items-center bg-surface px-6 text-center">
         <div>
-          <p className="text-lg font-bold text-ink">Unknown branch</p>
+          <p className="text-lg font-bold text-ink">{t('kiosk.unknownBranch')}</p>
           <button
             type="button"
             onClick={() => navigate('/attendance/kiosk')}
             className="mt-4 rounded-2xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-brand-on"
           >
-            Choose a shop
+            {t('kiosk.chooseAnother')}
           </button>
         </div>
       </div>
@@ -143,31 +145,29 @@ export default function KioskPage() {
     <KioskShell branch={branch} geo={geo} onLock={lock}>
       {/* ---- at-a-glance strip ---- */}
       <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Tile icon={LuUsers} label="On the roster" value={summary.headcount} />
-        <Tile icon={LuCircleCheck} label="On shift now" value={summary.onShift} tone="ok" />
-        <Tile icon={LuTriangleAlert} label="Late today" value={summary.late} tone={summary.late ? 'warn' : null} />
+        <Tile icon={LuUsers} label={t('kiosk.onRoster')} value={summary.headcount} />
+        <Tile icon={LuCircleCheck} label={t('kiosk.onShiftNow')} value={summary.onShift} tone="ok" />
+        <Tile icon={LuTriangleAlert} label={t('kiosk.lateToday')} value={summary.late} tone={summary.late ? 'warn' : null} />
         <Tile
           icon={LuTimer}
-          label="Overtime today"
+          label={t('kiosk.overtimeToday')}
           value={summary.overtimeMinutes ? `${Math.round((summary.overtimeMinutes / 60) * 10) / 10}h` : '0h'}
           tone={summary.overtimeMinutes ? 'ot' : null}
         />
       </section>
 
       <h2 className="mb-3 px-1 text-sm font-bold tracking-tight text-ink">
-        Tap your name to clock {summary.onShift ? 'in or out' : 'in'}
+        {summary.onShift ? t('kiosk.tapYourName') : t('kiosk.tapYourNameIn')}
       </h2>
 
       {staff === null ? (
         <div className="py-20">
-          <Spinner size={26} label="Loading the roster…" />
+          <Spinner size={26} label={t('kiosk.loadingRoster')} />
         </div>
       ) : staff.length === 0 ? (
         <div className="card card-pad text-center">
-          <p className="text-sm font-semibold text-ink">No staff on this branch yet</p>
-          <p className="mt-1 text-xs text-ink-muted">
-            {loadError ?? 'An administrator can add people from the admin dashboard.'}
-          </p>
+          <p className="text-sm font-semibold text-ink">{t('kiosk.noStaff')}</p>
+          <p className="mt-1 text-xs text-ink-muted">{loadError ?? t('kiosk.noStaffHint')}</p>
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
