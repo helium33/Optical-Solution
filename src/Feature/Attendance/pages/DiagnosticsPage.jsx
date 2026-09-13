@@ -11,6 +11,7 @@ import { ADMIN_EMAILS, isAllowlistedAdmin } from '../auth/admins';
 import { BRANCH_IDS } from '../config/branches';
 import { ROLES } from '../config/roles';
 import { isCallableUnavailable } from '../lib/callableErrors';
+import { DEV_FALLBACK, DEV_BRANCH_PIN_IDS } from '../services/verification.service';
 
 /**
  * `/attendance/diagnostics` — no gate, reachable by anyone with the URL.
@@ -439,6 +440,76 @@ export default function DiagnosticsPage() {
               </p>
             ) : null}
           </div>
+        )}
+      </Section>
+
+      {/* ---- branch PIN configuration ---- */}
+      <Section title="6. Why would a branch PIN be refused?">
+        <p className="mb-3 text-xs leading-relaxed text-ink-subtle">
+          The kiosk PIN pad calls the exact same setting checked here — this is what the
+          tablet actually does, not a description of it. Nothing below can show what a
+          PIN is, only whether one is configured.
+        </p>
+        <Row
+          icon={DEV_FALLBACK ? <LuCircleCheck className="h-4 w-4" /> : <LuCircleX className="h-4 w-4" />}
+          tone={DEV_FALLBACK ? 'good' : 'bad'}
+        >
+          Local test PINs (<code>VITE_ALLOW_CLIENT_PUNCH</code>) are {DEV_FALLBACK ? 'ON' : 'OFF'}
+        </Row>
+        {!DEV_FALLBACK ? (
+          <p className="mt-2 text-xs text-ink-subtle">
+            With this off, every branch PIN — Win, Pwint, Yangon, all of them — goes
+            straight to <code>verifyBranchPin</code>, the real server function that section
+            4 above already shows is not deployed. That refuses every PIN the same way,
+            which looks identical to a wrong PIN at the keypad but is not one. If{' '}
+            <code>.env</code> already has <code>VITE_ALLOW_CLIENT_PUNCH=true</code>, this
+            reading is stale: Vite only reads <code>.env</code> when the dev server starts,
+            never while it keeps running — fully stop <code>npm run dev</code> (not just
+            save the file) and start it again, then reload this page.
+          </p>
+        ) : (
+          <>
+            <div className="mt-3 space-y-1">
+              {BRANCH_IDS.map((id) => {
+                const hasOwnPin = DEV_BRANCH_PIN_IDS.includes(id);
+                return (
+                  <Row
+                    key={id}
+                    icon={hasOwnPin ? <LuCircleCheck className="h-4 w-4" /> : <LuTriangleAlert className="h-4 w-4" />}
+                    tone={hasOwnPin ? 'good' : 'bad'}
+                  >
+                    <code className="font-semibold">{id}</code>
+                    <span className="text-ink-subtle">
+                      {' '}
+                      —{' '}
+                      {hasOwnPin
+                        ? 'has its own PIN in VITE_DEV_BRANCH_PINS'
+                        : 'no PIN of its own; falls back to the shared PIN'}
+                    </span>
+                  </Row>
+                );
+              })}
+            </div>
+            {DEV_BRANCH_PIN_IDS.length === 0 ? (
+              <p className="mt-2 text-xs text-ink-subtle">
+                <code>VITE_DEV_BRANCH_PINS</code> is empty or not set, so all three branches
+                share one PIN instead (<code>VITE_DEV_BRANCH_PIN</code>, or 1234 if that is
+                unset too) — typing Win/Pwint/Yangon&apos;s own intended PINs would be
+                refused as &ldquo;wrong PIN&rdquo; everywhere. If <code>.env</code> already
+                has <code>VITE_DEV_BRANCH_PINS=win:1111,pwint:2222,yangon:3333</code>, this
+                is stale for the same reason as above: fully restart{' '}
+                <code>npm run dev</code>, then reload this page.
+              </p>
+            ) : DEV_BRANCH_PIN_IDS.some((id) => !BRANCH_IDS.includes(id)) ? (
+              <p className="mt-2 text-xs text-danger-ink/85">
+                <code>VITE_DEV_BRANCH_PINS</code> has an id that matches no real branch:{' '}
+                <code>{DEV_BRANCH_PIN_IDS.filter((id) => !BRANCH_IDS.includes(id)).join(', ')}</code>.
+                Check for a typo or a stray space around a colon or comma in{' '}
+                <code>.env</code> — it has to read exactly{' '}
+                <code>win:••••,pwint:••••,yangon:••••</code>.
+              </p>
+            ) : null}
+          </>
         )}
       </Section>
 

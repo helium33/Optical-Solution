@@ -48,7 +48,7 @@ const withTimeout = (promise, ms = CALL_TIMEOUT_MS) =>
     ),
   ]);
 
-const DEV_FALLBACK = import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true';
+export const DEV_FALLBACK = import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true';
 
 /**
  * Development PINs, per branch.
@@ -77,6 +77,16 @@ const DEV_BRANCH_PINS = (() => {
 const DEV_SHARED_PIN = import.meta.env.VITE_DEV_BRANCH_PIN || '1234';
 
 const devPinFor = (branchId) => DEV_BRANCH_PINS[branchId] ?? DEV_SHARED_PIN;
+
+/**
+ * Which branch ids have their OWN entry in `VITE_DEV_BRANCH_PINS` — never the
+ * PINs themselves. `/attendance/diagnostics` has no sign-in gate (that is the
+ * whole point of it), so it can show THIS safely to explain a refused PIN —
+ * e.g. a branch id that does not match any key here silently falls back to
+ * the shared PIN, which looks identical to "wrong PIN" at the keypad — but it
+ * must never be able to show what any actual PIN is.
+ */
+export const DEV_BRANCH_PIN_IDS = Object.keys(DEV_BRANCH_PINS);
 
 /**
  * @returns {Promise<{ok: boolean, reason?: string, ttlMinutes?: number}>}
