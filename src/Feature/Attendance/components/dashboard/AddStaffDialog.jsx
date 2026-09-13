@@ -89,11 +89,23 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
 
       const result = await setStaffPin(staffId, form.pin);
       if (!result.ok && result.reason === 'not-deployed') {
-        /* The person exists but cannot clock in yet — say so rather than
-           letting them find out at 9am tomorrow. */
+        /* Whether this actually blocks anyone from clocking in depends
+           entirely on VITE_ALLOW_CLIENT_PUNCH. When it's on, submitPunch's
+           own client-side fallback never checks the PIN at all — any 4
+           digits work — so the PIN this person just typed already works,
+           right now, at the kiosk; the seed:pins/Admin-SDK step only matters
+           once the real server exists and starts checking it for real. The
+           OLD wording here ("cannot clock in yet") was true only in that
+           later, not-yet-reached state, and sent someone straight to a
+           service-account download for a problem they did not have. */
         setPinWarning(
-          `${form.name.trim()} was added, but the PIN could not be set because the server ` +
-            'function is not deployed. Set it with: npm run seed:pins -- --staff',
+          import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true'
+            ? `${form.name.trim()} was added and can already clock in and out at the kiosk with ` +
+                'any 4-digit PIN — that check is not switched on yet while the system is being ' +
+                `set up. Once it is, run this once to give ${form.name.trim()} a fixed PIN: ` +
+                'npm run seed:pins -- --staff'
+            : `${form.name.trim()} was added, but the PIN could not be set because the server ` +
+                'function is not deployed. Set it with: npm run seed:pins -- --staff',
         );
         onAdded?.(staffId);
         setBusy(false);
