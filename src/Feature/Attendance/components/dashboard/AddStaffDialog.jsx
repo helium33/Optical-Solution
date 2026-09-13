@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { LuUserPlus, LuTriangleAlert, LuCircleCheck } from 'react-icons/lu';
 
 import Modal from '../ui/Modal';
@@ -31,6 +32,10 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  /* Tracked separately from the message so the UI can offer a targeted next
+     step for a permission failure specifically, rather than a link that would
+     be equally wrong for "the PIN service isn't deployed" or "you're offline". */
+  const [errorCode, setErrorCode] = useState(null);
   const [pinWarning, setPinWarning] = useState(null);
 
   useEffect(() => {
@@ -99,6 +104,7 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
       onClose?.();
     } catch (submitError) {
       setError(submitError?.message ?? 'Could not add that employee.');
+      setErrorCode(submitError?.code ?? null);
     } finally {
       setBusy(false);
     }
@@ -223,9 +229,17 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
         </fieldset>
 
         {error ? (
-          <p className="rounded-2xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger-ink" role="alert">
-            {error}
-          </p>
+          <div className="rounded-2xl bg-danger-soft px-4 py-3" role="alert">
+            <p className="text-sm font-medium text-danger-ink">{error}</p>
+            {errorCode === 'permission-denied' ? (
+              <Link
+                to="/attendance/diagnostics"
+                className="mt-1.5 inline-block text-xs font-bold text-danger-ink underline underline-offset-2"
+              >
+                Find out why →
+              </Link>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="flex gap-3 pt-1">
