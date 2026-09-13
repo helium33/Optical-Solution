@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LuFingerprint, LuCheck, LuTriangleAlert } from 'react-icons/lu';
 
@@ -62,6 +63,10 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
   const [pin, setPin] = useState('');
   const [overtime, setOvertime] = useState(false);
   const [error, setError] = useState(null);
+  /* Whether `error` means the server side of the punch could not be reached
+     at all, as opposed to a rejection FROM a server that IS there (a wrong
+     PIN, a rate limit) — only the former is worth a diagnostics link. */
+  const [errorUnreachable, setErrorUnreachable] = useState(false);
   /* Frozen at send time: `isCheckOut` is derived from the log and flips the
      instant the punch lands, which would relabel the confirmation. */
   const [submitted, setSubmitted] = useState(null);
@@ -72,6 +77,7 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
     setPin('');
     setOvertime(false);
     setError(null);
+    setErrorUnreachable(false);
     setSubmitted(null);
   }, [open, staff?.id]);
 
@@ -165,7 +171,9 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
         setStep(STEP.DONE);
         onSubmitted?.(response);
       } catch (submitError) {
-        setError(toMessage(submitError, t));
+        const described = describeError(submitError, t);
+        setError(described.message);
+        setErrorUnreachable(described.unreachable);
         setStep(STEP.ENTRY);
         setPin('');
       }
@@ -178,6 +186,7 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
   const onPinChange = useCallback(
     (next) => {
       setError(null);
+      setErrorUnreachable(false);
       setPin(next);
       /* Reserved: SecretAdminDoor is already navigating away. */
       if (next === ADMIN_SEQUENCE) return;
@@ -306,9 +315,17 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
           ) : null}
 
           {error ? (
-            <p className="rounded-2xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger-ink" role="alert">
-              {error}
-            </p>
+            <div className="rounded-2xl bg-danger-soft px-4 py-3" role="alert">
+              <p className="text-sm font-medium text-danger-ink">{error}</p>
+              {errorUnreachable ? (
+                <Link
+                  to="/attendance/diagnostics"
+                  className="mt-1.5 inline-block text-xs font-bold text-danger-ink underline underline-offset-2"
+                >
+                  {t('kiosk.runDiagnostics')}
+                </Link>
+              ) : null}
+            </div>
           ) : null}
 
           {/* ---- prove it is you ---- */}
@@ -432,15 +449,31 @@ function SuccessPanel({ staff, branch, submitted }) {
   );
 }
 
-function toMessage(error, t) {
+/**
+ * A KNOWN, EXPECTED rejection FROM a function that ran — as opposed to the
+ * function never having run at all. This is a denylist rather than an
+ * allowlist of "unavailable" codes on purpose: `isCallableUnavailable()`
+ * covers the shapes seen so far (not-found, internal, unavailable, prefixed
+ * or bare), but a genuine raw network failure reaches this catch with NO
+ * `.code` at all, matching none of them — and that is the single most likely
+ * real cause of "cannot reach the server," not another disguise of "not
+ * deployed." Starting from "what does a real rejection look like" and
+ * treating everything else as unreachable covers that case along with any
+ * future error shape neither list has seen yet, rather than adding one more
+ * code at a time forever.
+ */
+function describeError(error, t) {
   const code = error?.code ?? '';
+
   if (code === 'functions/permission-denied' || code === 'permission-denied') {
-    return t('errors.wrongPin');
+    return { message: t('errors.wrongPin'), unreachable: false };
   }
-  if (code === 'functions/resource-exhausted') return t('errors.tooManyAttempts');
-  if (code === 'functions/unavailable' || code === 'unavailable') return t('errors.noServer');
+  if (code === 'functions/resource-exhausted') {
+    return { message: t('errors.tooManyAttempts'), unreachable: false };
+  }
   if (code === 'functions/failed-precondition' || code === 'failed-precondition') {
-    return error.message ?? t('errors.generic');
+    return { message: error.message ?? t('errors.generic'), unreachable: false };
   }
-  return error?.message ?? t('errors.generic');
+
+  return { message: t('errors.noServer'), unreachable: true };
 }

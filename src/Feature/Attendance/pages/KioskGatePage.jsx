@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LuGlasses, LuArrowRight, LuArrowLeft } from 'react-icons/lu';
 
@@ -158,9 +158,22 @@ export default function KioskGatePage() {
               <>
                 <PinPad value={pin} onChange={onPinChange} length={4} error={Boolean(error)} />
                 {error ? (
-                  <p className="mt-5 text-center text-sm font-semibold text-danger-ink" role="alert">
-                    {t(error)}
-                  </p>
+                  <div className="mt-5 text-center">
+                    <p className="text-sm font-semibold text-danger-ink" role="alert">
+                      {t(error)}
+                    </p>
+                    {/* Both mean the server side of the PIN check could not be
+                        reached at all — a genuinely wrong PIN never lands
+                        here, so a diagnostics link is never shown for one. */}
+                    {error === 'errors.noServer' || error === 'errors.notDeployed' ? (
+                      <Link
+                        to="/attendance/diagnostics"
+                        className="mt-1.5 inline-block text-xs font-bold text-brand-ink hover:underline"
+                      >
+                        {t('kiosk.runDiagnostics')}
+                      </Link>
+                    ) : null}
+                  </div>
                 ) : null}
                 <button
                   type="button"
