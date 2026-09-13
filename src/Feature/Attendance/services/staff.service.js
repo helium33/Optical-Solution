@@ -13,6 +13,7 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../config/firebase';
 import { staffCol, staffDoc } from './paths';
 import { ROLE_META } from '../config/roles';
+import { isCallableUnavailable } from '../lib/callableErrors';
 
 /**
  * Staff records. The `pin` and `webauthn.credentials[].publicKey` fields are
@@ -121,7 +122,7 @@ export async function setStaffPin(staffId, pin) {
     const response = await callSetStaffPin({ staffId, pin });
     return response.data ?? { ok: true };
   } catch (error) {
-    if (ALLOW_CLIENT_FALLBACK && error?.code === 'functions/not-found') {
+    if (ALLOW_CLIENT_FALLBACK && isCallableUnavailable(error)) {
       console.warn(
         '[attendance] setStaffPin is not deployed. The employee was created but has NO PIN, ' +
           'so they cannot clock in yet. Set it with `npm run seed:pins -- --staff`.',

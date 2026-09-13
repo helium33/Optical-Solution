@@ -2,6 +2,7 @@ import { httpsCallable } from 'firebase/functions';
 import { signInAnonymously, signInWithCustomToken, signOut } from 'firebase/auth';
 
 import { auth, functions } from '../config/firebase';
+import { isCallableUnavailable } from '../lib/callableErrors';
 
 /**
  * Branch PIN verification, and the identity it hands back.
@@ -90,7 +91,7 @@ export async function unlockKiosk(branchId, pin) {
     if (error?.code === 'deadline-exceeded' || error?.code === 'functions/deadline-exceeded') {
       return { ok: false, reason: 'timeout' };
     }
-    if (DEV_FALLBACK && error?.code === 'functions/not-found') {
+    if (DEV_FALLBACK && isCallableUnavailable(error)) {
       console.warn(
         '[attendance] verifyBranchPin is not deployed — using the development PIN and an ' +
           'unauthenticated kiosk session. Never ship with VITE_ALLOW_CLIENT_PUNCH enabled.',
@@ -118,7 +119,7 @@ export async function unlockKiosk(branchId, pin) {
     }
     if (error?.code === 'functions/resource-exhausted') return { ok: false, reason: 'rate-limited' };
     if (error?.code === 'functions/permission-denied') return { ok: false, reason: 'wrong-pin' };
-    if (error?.code === 'functions/not-found') {
+    if (isCallableUnavailable(error)) {
       /* The function simply is not there. Say that, rather than blaming the
          network — the fix is a deploy, not a better signal. */
       console.error(
