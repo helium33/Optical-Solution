@@ -77,10 +77,9 @@ VITE_DEV_BRANCH_PINS=win:1111,pwint:2222,yangon:3333
 
 # Skips the 50 m geofence, so you can test from home rather than the shop.
 VITE_DEV_MODE=true
-
-# Opens the kiosk at "/" instead of the storefront. What you want on a tablet.
-VITE_DEFAULT_APP=attendance
 ```
+
+`/` already opens the kiosk by default — nothing to add for that.
 
 Your three real PINs then work exactly as they will in production. They are safe
 in `.env` because `.env` is gitignored — **never** put them in `.env.example`,
@@ -174,10 +173,13 @@ prints. Three screens:
 |---|---|
 | **Kiosk** (staff clock in/out) | http://localhost:5173/attendance/kiosk |
 | **Admin dashboard** | http://localhost:5173/attendance/admin |
-| Storefront (the old project) | http://localhost:5173/ |
+| Storefront (the old project) | http://localhost:5173/feature |
+| Diagnostics | http://localhost:5173/attendance/diagnostics |
 
-`/` is the storefront unless you set `VITE_DEFAULT_APP=attendance`. That is by
-design — this repo holds both apps.
+`/` opens the kiosk directly — this repo holds both apps, but the attendance
+system is the one actively worked on, so it is what "/" opens. Set
+`VITE_DEFAULT_APP=storefront` in `.env` if you need the storefront back at `/`
+(a real public deployment, say).
 
 ### Getting into the admin dashboard
 

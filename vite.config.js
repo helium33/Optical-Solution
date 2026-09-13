@@ -20,18 +20,18 @@ const announceRoutes = () => ({
       /* loadEnv, not process.env: Vite reads .env into import.meta.env for the
          app but does not put it on process.env, so the config has to ask. */
       const env = loadEnv(server.config.mode, process.cwd(), 'VITE_');
-      const landsOnAttendance = env.VITE_DEFAULT_APP === 'attendance';
+      const landsOnStorefront = env.VITE_DEFAULT_APP === 'storefront';
       console.log('');
       console.log('  Attendance app');
-      console.log(`  \u279c  Kiosk:       ${base}/attendance/kiosk`);
-      console.log(`  \u279c  My records:  ${base}/attendance/me`);
-      console.log(`  \u279c  Preview:     ${base}/attendance/preview   (sample data)`);
-      console.log('  \u279c  Admin:       type 7860 on any screen');
+      console.log(`  \u279c  Kiosk:        ${base}/attendance/kiosk`);
+      console.log(`  \u279c  Admin:        ${base}/attendance/admin   (type 7860 on any screen)`);
+      console.log(`  \u279c  Diagnostics:  ${base}/attendance/diagnostics`);
+      console.log(`  \u279c  Preview:      ${base}/attendance/preview   (sample data)`);
       console.log('');
       console.log(
-        landsOnAttendance
-          ? '  "/" redirects to the kiosk (VITE_DEFAULT_APP=attendance).'
-          : '  "/" is the storefront. Set VITE_DEFAULT_APP=attendance to land on the kiosk.',
+        landsOnStorefront
+          ? '  "/" is the storefront (VITE_DEFAULT_APP=storefront).'
+          : '  "/" redirects to the kiosk. Set VITE_DEFAULT_APP=storefront for the old storefront-first behaviour.',
       );
       console.log('');
     };

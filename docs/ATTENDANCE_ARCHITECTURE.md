@@ -4,15 +4,20 @@ Staff attendance for three optical shops (Win, Pwint, Yangon), built inside the
 existing Vite + React + Tailwind storefront as a self-contained feature module
 under `src/Feature/Attendance/`.
 
-> **`/` is the storefront that was already in this repository, not this app.**
-> The attendance routes all live under `/attendance`. On a shop tablet, set
-> `VITE_DEFAULT_APP=attendance` in `.env` so `/` redirects to the kiosk — open
-> the browser, be on the kiosk. The dev server prints every route on startup for
-> the same reason: Vite advertises only the root, and the root is sunglasses.
+> **`/` opens the kiosk by default.** This project's active work is the
+> attendance system; the storefront that was already in this repository is
+> legacy content sharing the codebase, not the other way round. Set
+> `VITE_DEFAULT_APP=storefront` in `.env` to put the storefront back at `/` —
+> for a real public deployment where customers, not shop staff, land on `/`.
+> The dev server prints every route on startup either way.
 
 - **Kiosk** — `/attendance/kiosk` — a shared shop tablet. No staff accounts.
-- **My records** — `/attendance/me` — a staff member's own figures, opened with their PIN.
+  There is no staff-facing dashboard; a punch confirms and returns to the
+  roster on its own.
 - **Admin** — `/attendance/admin` — Google OAuth, three allowlisted addresses.
+- **Diagnostics** — `/attendance/diagnostics` — no gate; live checks against
+  the actual Firebase project when something reports "Missing or insufficient
+  permissions."
   The sign-in is **hidden**: type `7860` anywhere to reveal it.
 - **Preview** — `/attendance/preview` — the dashboard with sample data. Dev builds only.
 

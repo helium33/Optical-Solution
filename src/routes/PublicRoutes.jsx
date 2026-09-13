@@ -8,24 +8,27 @@ const HomePage = lazy(() => import("../Feature/Public/Pages/HomePage"));
 /**
  * What sits at "/".
  *
- * By default the storefront, as before. But a shop tablet should open the
- * browser and land on the kiosk — not on a page of sunglasses with the real
- * app hidden one URL deeper. Set this in .env on the tablet:
+ * The kiosk, by default. This project's active work is the attendance system —
+ * the storefront is legacy content sharing the codebase, not the other way
+ * round — so opening the app should not require knowing there is a second
+ * path one level deeper. The storefront is unchanged and fully reachable at
+ * /feature and /Contact-us; only the landing page moved.
  *
- *     VITE_DEFAULT_APP=attendance
+ * Opt back into the old behaviour (storefront at "/") with:
  *
- * and "/" goes straight to the kiosk. The storefront is still reachable at
- * /feature and /Contact-us, and nothing about it changes; only the landing
- * page moves.
+ *     VITE_DEFAULT_APP=storefront
+ *
+ * — for a real public deployment where customers, not shop staff, are the
+ * ones landing on "/".
  */
-const LANDS_ON_ATTENDANCE = import.meta.env.VITE_DEFAULT_APP === 'attendance';
+const LANDS_ON_STOREFRONT = import.meta.env.VITE_DEFAULT_APP === 'storefront';
 
 const PublicRoutes = [
     {
         index : true,
-        element : LANDS_ON_ATTENDANCE
-            ? <Navigate to="/attendance/kiosk" replace />
-            : <HomePage />
+        element : LANDS_ON_STOREFRONT
+            ? <HomePage />
+            : <Navigate to="/attendance/kiosk" replace />
     },
     {
         path : '/feature',
