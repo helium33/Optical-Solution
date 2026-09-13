@@ -57,11 +57,11 @@ const CHECKED_COLLECTIONS = [
  * next shape is read off the screen instead of described secondhand.
  */
 const CHECKED_CALLABLES = [
-  { name: 'verifyBranchPin', payload: { branchId: '__diagnostics_probe__', pin: '0000' }, why: 'unlocking the kiosk' },
-  { name: 'submitPunch', payload: { kind: 'check_in', branchId: '__diagnostics_probe__', staffId: '__diagnostics_probe__' }, why: 'a verified clock-in/out' },
-  { name: 'setStaffPin', payload: { staffId: '__diagnostics_probe__', pin: '0000' }, why: 'giving a new employee a PIN' },
-  { name: 'beginWebAuthnRegistration', payload: { staffId: '__diagnostics_probe__' }, why: 'enrolling a fingerprint' },
-  { name: 'beginWebAuthnAuthentication', payload: { staffId: '__diagnostics_probe__' }, why: 'clocking in with a fingerprint' },
+  { name: 'verifyBranchPin', payload: { branchId: 'diagnostics-probe', pin: '0000' }, why: 'unlocking the kiosk' },
+  { name: 'submitPunch', payload: { kind: 'check_in', branchId: 'diagnostics-probe', staffId: 'diagnostics-probe' }, why: 'a verified clock-in/out' },
+  { name: 'setStaffPin', payload: { staffId: 'diagnostics-probe', pin: '0000' }, why: 'giving a new employee a PIN' },
+  { name: 'beginWebAuthnRegistration', payload: { staffId: 'diagnostics-probe' }, why: 'enrolling a fingerprint' },
+  { name: 'beginWebAuthnAuthentication', payload: { staffId: 'diagnostics-probe' }, why: 'clocking in with a fingerprint' },
 ];
 
 export default function DiagnosticsPage() {
@@ -153,11 +153,15 @@ export default function DiagnosticsPage() {
 
   /**
    * Writes and immediately deletes one throwaway document at
-   * `staff/__diagnostics_probe__`. Manual, not automatic like the read
+   * `staff/diagnostics-probe`. Manual, not automatic like the read
    * checks: those only ever read one document and discard it, this touches
    * real data. The document ID makes it unmistakable if it were ever left
    * behind, and the delete runs even when create succeeded but something
    * else in the app is watching the collection — cleanup is not optional.
+   * Do not wrap this id in double underscores (`__like_this__`): Firestore
+   * reserves that exact pattern and rejects it with `invalid-argument`
+   * before rules are even evaluated — which is what the previous id did,
+   * silently breaking this whole check against the real project.
    *
    * The payload matters. `firestore.rules` (the production ruleset, unlike
    * the development one) gates a staff create on
@@ -173,7 +177,7 @@ export default function DiagnosticsPage() {
    */
   const runWriteCheck = async () => {
     setWriteRunning(true);
-    const ref = doc(db, COLLECTIONS.STAFF, '__diagnostics_probe__');
+    const ref = doc(db, COLLECTIONS.STAFF, 'diagnostics-probe');
     let create = null;
     let del = null;
     try {
@@ -389,7 +393,7 @@ export default function DiagnosticsPage() {
           Reading the roster and adding a staff member are gated by two different rules —{' '}
           <code>signedIn()</code> for the read, <code>isAdmin()</code> for the write — evaluated
           against the same token. Section 3 passing proves nothing about this. Writes and then
-          deletes one throwaway document at <code>staff/__diagnostics_probe__</code>; nothing
+          deletes one throwaway document at <code>staff/diagnostics-probe</code>; nothing
           else in your data is touched.
         </p>
         {!writeCheck ? (
@@ -420,7 +424,7 @@ export default function DiagnosticsPage() {
                 {!writeCheck.delete.ok ? (
                   <p className="ml-6 text-xs text-danger-ink/85">
                     <code>{writeCheck.delete.code}</code>: {writeCheck.delete.message} — the probe
-                    document may still exist at <code>staff/__diagnostics_probe__</code>; delete it
+                    document may still exist at <code>staff/diagnostics-probe</code>; delete it
                     by hand from the Firestore console.
                   </p>
                 ) : null}
