@@ -11,7 +11,7 @@ import { ADMIN_EMAILS, isAllowlistedAdmin } from '../auth/admins';
 import { BRANCH_IDS } from '../config/branches';
 import { ROLES } from '../config/roles';
 import { isCallableUnavailable } from '../lib/callableErrors';
-import { DEV_FALLBACK, DEV_BRANCH_PIN_IDS } from '../services/verification.service';
+import { DEV_FALLBACK, DEV_BRANCH_PIN_IDS, unlockKiosk } from '../services/verification.service';
 
 /**
  * `/attendance/diagnostics` — no gate, reachable by anyone with the URL.
@@ -73,6 +73,10 @@ export default function DiagnosticsPage() {
   const [writeRunning, setWriteRunning] = useState(false);
   const [callableResults, setCallableResults] = useState(null);
   const [callableRunning, setCallableRunning] = useState(false);
+  const [testBranch, setTestBranch] = useState(BRANCH_IDS[0]);
+  const [testPin, setTestPin] = useState('');
+  const [unlockTesting, setUnlockTesting] = useState(false);
+  const [unlockResult, setUnlockResult] = useState(null);
 
   useEffect(
     () =>
@@ -211,6 +215,31 @@ export default function DiagnosticsPage() {
       /* surfaced via authState/onAuthStateChanged already */
     }
     runChecks();
+  };
+
+  /**
+   * Calls `unlockKiosk` — the exact function the kiosk PIN pad calls, not a
+   * re-implementation of it — with whatever branch and PIN the operator types
+   * here, and shows the raw `{ok, reason, message}` it returns. Every failure
+   * reason this app can produce (wrong PIN, anonymous sign-in disabled, rate
+   * limited, not deployed, a timeout) reads identically to "wrong PIN" on the
+   * actual kiosk screen; this is the one place that tells them apart.
+   *
+   * Manual and side-effecting, like section 5: a PIN that matches signs this
+   * browser into a real anonymous session, which replaces whatever identity
+   * section 2 above currently shows.
+   */
+  const runUnlockTest = async () => {
+    setUnlockTesting(true);
+    setUnlockResult(null);
+    try {
+      const result = await unlockKiosk(testBranch, testPin);
+      setUnlockResult(result);
+    } catch (error) {
+      setUnlockResult({ ok: false, reason: 'exception', message: error?.message ?? String(error) });
+    } finally {
+      setUnlockTesting(false);
+    }
   };
 
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || '(not set)';
@@ -511,6 +540,92 @@ export default function DiagnosticsPage() {
             ) : null}
           </>
         )}
+      </Section>
+
+      {/* ---- live unlock test ---- */}
+      <Section title="7. Test a real branch unlock">
+        <p className="mb-3 text-xs leading-relaxed text-ink-subtle">
+          Calls <code>unlockKiosk</code> — the exact function the kiosk PIN pad calls, not
+          a description of it — with the branch and PIN typed below, and shows exactly
+          what it returns. This is not read-only like the checks above: a PIN that
+          matches signs THIS browser into a real anonymous kiosk session, replacing
+          whatever identity section 2 shows. Read the result below, not the kiosk
+          screen.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-ink-subtle">
+              Branch
+            </span>
+            <select
+              value={testBranch}
+              onChange={(event) => setTestBranch(event.target.value)}
+              className="rounded-xl border border-line bg-surface-card px-3 py-2 text-sm text-ink"
+            >
+              {BRANCH_IDS.map((id) => (
+                <option key={id} value={id}>{id}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-ink-subtle">
+              PIN
+            </span>
+            <input
+              value={testPin}
+              onChange={(event) => setTestPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+              inputMode="numeric"
+              placeholder="1111"
+              autoComplete="off"
+              className="w-24 rounded-xl border border-line bg-surface-card px-3 py-2 text-sm text-ink"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={runUnlockTest}
+            disabled={unlockTesting || testPin.length !== 4}
+            className="rounded-xl bg-brand-600 px-4 py-2 text-xs font-bold text-brand-on disabled:opacity-50"
+          >
+            {unlockTesting ? 'Testing…' : 'Test unlock'}
+          </button>
+        </div>
+        {unlockResult ? (
+          <div className="mt-3">
+            <Row
+              icon={unlockResult.ok ? <LuCircleCheck className="h-4 w-4" /> : <LuCircleX className="h-4 w-4" />}
+              tone={unlockResult.ok ? 'good' : 'bad'}
+            >
+              {unlockResult.ok ? 'Accepted' : (
+                <>
+                  Refused — reason: <code>{unlockResult.reason ?? 'unknown'}</code>
+                </>
+              )}
+            </Row>
+            {!unlockResult.ok && unlockResult.message ? (
+              <p className="ml-6 mt-1 text-xs text-danger-ink/85">{unlockResult.message}</p>
+            ) : null}
+            {!unlockResult.ok && unlockResult.reason === 'anonymous-disabled' ? (
+              <p className="ml-6 mt-1 text-xs text-ink-muted">
+                The PIN itself was correct. Firebase Console → Authentication → Sign-in
+                method → enable <strong>Anonymous</strong>, then test again.
+              </p>
+            ) : null}
+            {!unlockResult.ok && (unlockResult.reason === 'not-deployed' || unlockResult.reason === 'unavailable') ? (
+              <p className="ml-6 mt-1 text-xs text-ink-muted">
+                This never reached the PIN comparison at all — it went to the real,
+                undeployed <code>verifyBranchPin</code> function instead. See section 6
+                above: local test PINs are most likely off, or <code>.env</code> was
+                edited without fully restarting <code>npm run dev</code>.
+              </p>
+            ) : null}
+            {unlockResult.ok ? (
+              <p className="ml-6 mt-1 text-xs text-ink-subtle">
+                This browser is now signed in as that kiosk session — check section 2
+                above.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </Section>
 
       {/* ---- verdict ---- */}
