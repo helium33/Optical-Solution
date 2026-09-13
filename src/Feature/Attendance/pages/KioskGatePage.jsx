@@ -216,6 +216,7 @@ function errorKeyFor(reason) {
     case 'timeout':
       return 'errors.timeout';
     case 'unavailable':
+    case 'sign-in-failed':
       return 'errors.noServer';
     default:
       return 'errors.wrongBranchPin';

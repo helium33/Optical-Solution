@@ -120,10 +120,20 @@ export async function unlockKiosk(branchId, pin) {
       try {
         await signInAnonymously(auth);
       } catch (anonError) {
-        if (anonError?.code === 'auth/operation-not-allowed') {
+        /* Same "not enabled" condition, two different codes: Firebase's own
+           SDKs are inconsistent about which one they raise when Anonymous is
+           switched off, and a real project surfaced the second one — see
+           https://github.com/firebase/flutterfire/issues/2935. Reason is
+           distinct from the generic 'unavailable' below (a signInAnonymously
+           failure means the PIN already matched; that is worth telling apart
+           on the diagnostics page from a request that never got that far). */
+        if (
+          anonError?.code === 'auth/operation-not-allowed'
+          || anonError?.code === 'auth/admin-restricted-operation'
+        ) {
           return { ok: false, reason: 'anonymous-disabled' };
         }
-        return { ok: false, reason: 'unavailable', message: anonError?.message };
+        return { ok: false, reason: 'sign-in-failed', message: anonError?.message };
       }
       return { ok: true, ttlMinutes: 840, dev: true };
     }

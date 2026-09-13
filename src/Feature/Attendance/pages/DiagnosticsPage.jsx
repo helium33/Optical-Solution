@@ -618,6 +618,15 @@ export default function DiagnosticsPage() {
                 edited without fully restarting <code>npm run dev</code>.
               </p>
             ) : null}
+            {!unlockResult.ok && unlockResult.reason === 'sign-in-failed' ? (
+              <p className="ml-6 mt-1 text-xs text-ink-muted">
+                The PIN itself was correct — this failed on the very next step, signing
+                the tablet in anonymously, which is a Firebase Auth problem rather than a
+                PIN or rules one. See the exact message above; a common cause is
+                something on this network or browser blocking Google&apos;s sign-in
+                servers specifically while everything else keeps working.
+              </p>
+            ) : null}
             {unlockResult.ok ? (
               <p className="ml-6 mt-1 text-xs text-ink-subtle">
                 This browser is now signed in as that kiosk session — check section 2
