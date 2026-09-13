@@ -60,6 +60,8 @@ const CHECKED_CALLABLES = [
   { name: 'verifyBranchPin', payload: { branchId: '__diagnostics_probe__', pin: '0000' }, why: 'unlocking the kiosk' },
   { name: 'submitPunch', payload: { kind: 'check_in', branchId: '__diagnostics_probe__', staffId: '__diagnostics_probe__' }, why: 'a verified clock-in/out' },
   { name: 'setStaffPin', payload: { staffId: '__diagnostics_probe__', pin: '0000' }, why: 'giving a new employee a PIN' },
+  { name: 'beginWebAuthnRegistration', payload: { staffId: '__diagnostics_probe__' }, why: 'enrolling a fingerprint' },
+  { name: 'beginWebAuthnAuthentication', payload: { staffId: '__diagnostics_probe__' }, why: 'clocking in with a fingerprint' },
 ];
 
 export default function DiagnosticsPage() {

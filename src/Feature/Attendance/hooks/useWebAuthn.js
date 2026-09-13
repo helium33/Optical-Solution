@@ -3,6 +3,7 @@ import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '../config/firebase';
 import { base64UrlToBytes, bytesToBase64Url } from '../lib/crypto';
+import { isCallableUnavailable } from '../lib/callableErrors';
 
 /**
  * Fingerprint / Face unlock at the kiosk, via WebAuthn.
@@ -171,7 +172,13 @@ function toMessage(error) {
   if (name === 'NotAllowedError') return 'Fingerprint not recognised, or the prompt was dismissed.';
   if (name === 'InvalidStateError') return 'This device is already enrolled for that person.';
   if (name === 'SecurityError') return 'Biometrics need a secure (HTTPS) connection.';
-  if (error?.code === 'functions/not-found') {
+  /* Same "not deployed" family as every other callable in this app — not-
+     found/internal/unavailable, prefixed or bare. Matched the module intent
+     ("biometrics are reported as unavailable") but the narrower check that
+     only caught `functions/not-found` let this project's actual failure
+     shape (`functions/internal`) reach the kiosk as a raw, untranslated
+     message instead. */
+  if (isCallableUnavailable(error)) {
     return 'Biometric sign-in is not set up on the server yet. Use a PIN.';
   }
   return error?.message ?? 'Fingerprint check failed.';
