@@ -73,7 +73,12 @@
     "clockedInAt": "Clocked in at",
     "clockedOutAt": "Clocked out at",
     "hoursToday": "Hours today",
-    "returningToKiosk": "Returning to the kiosk…"
+    "returningToKiosk": "Returning to the kiosk…",
+    "scheduledStart": "Scheduled start",
+    "onTime": "On time",
+    "lateBy": "Late by {{duration}}",
+    "overtimeAvailable": "Overtime available",
+    "status": "Status"
   },
   "overtime": {
     "claim": "Claim overtime",

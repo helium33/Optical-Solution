@@ -12,6 +12,7 @@ import { useGeoFence } from '../hooks/useGeoFence';
 import { useNow } from '../hooks/useNow';
 import { useBranch } from '../config/BranchesProvider';
 import { subscribeBranchStaff } from '../services/staff.service';
+import { STAFF_ROLE_ORDER, roleLabel } from '../config/roles';
 import { subscribeDayBoard } from '../services/attendance.service';
 import { readKioskSession, closeKioskSession, touchKioskSession } from '../services/kioskSession';
 import { lockKiosk } from '../services/verification.service';
@@ -90,6 +91,17 @@ export default function KioskPage() {
     for (const log of logs) map.set(log.staffId, log);
     return map;
   }, [logs]);
+
+  /* Highest rank first, same order the admin Team view uses. `staff` is
+     already role-then-name sorted, so this only partitions it into visible
+     groups rather than re-sorting. */
+  const roleTiers = useMemo(() => {
+    const roster = staff ?? [];
+    return [...STAFF_ROLE_ORDER]
+      .reverse()
+      .map((role) => ({ role, people: roster.filter((person) => person.role === role) }))
+      .filter((tier) => tier.people.length > 0);
+  }, [staff]);
 
   const summary = useMemo(() => {
     const roster = staff ?? [];
@@ -186,26 +198,49 @@ export default function KioskPage() {
           ) : null}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {staff.map((person, index) => {
-            const log = logsById.get(person.id) ?? null;
-            const elapsed =
-              log?.checkIn?.at && !log?.checkOut?.at
-                ? minutesBetween(log.checkIn.at, now)
-                : null;
-            return (
-              <div key={person.id} style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }} className="animate-fade-up">
-                <StaffCard
-                  staff={person}
-                  log={log}
-                  timezone={branch.timezone}
-                  elapsedMinutes={elapsed}
-                  onSelect={setSelected}
-                  disabled={geo.pending}
-                />
+        /* Grouped by seniority the moment the roster loads, highest rank
+           first — the same tiers and order the admin Team view uses, so a
+           person's place in the hierarchy reads the same everywhere. `staff`
+           already arrives sorted role-then-name; this only adds the visible
+           section headers on top of an order that was already there. */
+        <div className="space-y-6">
+          {roleTiers.map(({ role, people }) => (
+            <section key={role}>
+              <p className="mb-2.5 flex items-center gap-2 px-1">
+                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-subtle">
+                  {roleLabel(role, t)}
+                </span>
+                <span className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-[10px] font-bold text-ink-subtle tabular">
+                  {people.length}
+                </span>
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {people.map((person, index) => {
+                  const log = logsById.get(person.id) ?? null;
+                  const elapsed =
+                    log?.checkIn?.at && !log?.checkOut?.at
+                      ? minutesBetween(log.checkIn.at, now)
+                      : null;
+                  return (
+                    <div
+                      key={person.id}
+                      style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+                      className="animate-fade-up"
+                    >
+                      <StaffCard
+                        staff={person}
+                        log={log}
+                        timezone={branch.timezone}
+                        elapsedMinutes={elapsed}
+                        onSelect={setSelected}
+                        disabled={geo.pending}
+                      />
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </section>
+          ))}
         </div>
       )}
 

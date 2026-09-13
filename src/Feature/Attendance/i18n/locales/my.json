@@ -73,7 +73,12 @@
     "clockedInAt": "ဝင်ချိန် မှတ်ပြီး —",
     "clockedOutAt": "ထွက်ချိန် မှတ်ပြီး —",
     "hoursToday": "ယနေ့ အလုပ်ချိန်",
-    "returningToKiosk": "ပင်မစာမျက်နှာသို့ ပြန်သွားနေပါသည်…"
+    "returningToKiosk": "ပင်မစာမျက်နှာသို့ ပြန်သွားနေပါသည်…",
+    "scheduledStart": "သတ်မှတ်ချိန်",
+    "onTime": "အချိန်မီ",
+    "lateBy": "{{duration}} နောက်ကျ",
+    "overtimeAvailable": "Overtime ရနိုင်သည်",
+    "status": "အခြေအနေ"
   },
   "overtime": {
     "claim": "အချိန်ပို တောင်းခံမည်",

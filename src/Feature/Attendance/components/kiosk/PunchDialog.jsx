@@ -5,6 +5,7 @@ import { LuFingerprint, LuCheck, LuTriangleAlert } from 'react-icons/lu';
 import Modal from '../ui/Modal';
 import Spinner from '../ui/Spinner';
 import Avatar from '../ui/Avatar';
+import StatusPill from '../ui/StatusPill';
 import PinPad from './PinPad';
 import OvertimeToggle from './OvertimeToggle';
 import { usePolicyText } from '../../i18n/policyText';
@@ -14,7 +15,7 @@ import { submitPunch, PUNCH, AUTH_METHOD } from '../../services/attendance.servi
 import { INTENT, ACCESS } from '../../lib/accessPolicy';
 import { BYPASS_TAG } from '../../config/devMode';
 import { ADMIN_SEQUENCE } from '../../services/adminReveal';
-import { computeWorkSession, formatClock, formatDuration } from '../../lib/time';
+import { computeWorkSession, formatClock, formatDuration, ATTENDANCE_STATUS } from '../../lib/time';
 import { roleLabel } from '../../config/roles';
 
 /**
@@ -34,6 +35,14 @@ import { roleLabel } from '../../config/roles';
  * returns to the roster by itself — a shop tablet is a shared surface, and
  * leaving a person's hours on screen for the next member of staff to read is
  * not a feature.
+ *
+ * "What it will record" is shown for BOTH directions, not just check-out:
+ * clocking in previews the scheduled start and whether this is on time or
+ * late, using the exact same computeWorkSession() the server scores it with,
+ * so the number a person sees here is never a rough estimate that could then
+ * disagree with what actually gets recorded. Clocking out adds a fourth cell
+ * for overtime the moment it becomes eligible, so the figure is visible at a
+ * glance rather than only after opening the toggle below it.
  */
 
 const STEP = { ENTRY: 'entry', WORKING: 'working', DONE: 'done' };
@@ -80,6 +89,20 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
       now,
     });
   }, [isCheckOut, log, branch, shift, now, overtime]);
+
+  /**
+   * The check-in equivalent of `preview` above: what clocking in RIGHT NOW
+   * would record. checkOutAt is set to the same instant as checkInAt purely
+   * so computeWorkSession scores lateness against a closed, not an open,
+   * session — workedMinutes from this call is meaningless and unused; only
+   * scheduledStart and status are read. Same function the server uses to
+   * decide LATE vs ON_TIME, so this can never show "on time" for a punch the
+   * server is about to record as late.
+   */
+  const checkInPreview = useMemo(() => {
+    if (isCheckOut || !branch) return null;
+    return computeWorkSession({ checkInAt: now, checkOutAt: now, shift, timeZone: branch.timezone, now });
+  }, [isCheckOut, branch, shift, now]);
 
   /* Eligibility ignores the toggle, or turning it off would report "no
      overtime available" and it could never be turned back on. */
@@ -215,10 +238,41 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
 
           {/* ---- what it will record ---- */}
           {isCheckOut && preview ? (
-            <dl className="grid grid-cols-3 gap-2 text-center">
+            <dl className={`grid gap-2 text-center ${eligibility?.overtime.eligibleMinutes > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
               <Cell label={t('punch.checkedIn')} value={formatClock(log.checkIn.at, branch.timezone)} />
               <Cell label={t('punch.shiftEnds')} value={formatClock(preview.scheduledEnd, branch.timezone)} />
               <Cell label={t('punch.break')} value={formatDuration(preview.breakMinutes)} />
+              {eligibility?.overtime.eligibleMinutes > 0 ? (
+                <Cell
+                  label={t('punch.overtimeAvailable')}
+                  value={formatDuration(eligibility.overtime.eligibleMinutes)}
+                  tone="ot"
+                />
+              ) : null}
+            </dl>
+          ) : null}
+
+          {/* ---- what it will record, on check-IN ---- */}
+          {!isCheckOut && checkInPreview ? (
+            <dl className="grid grid-cols-2 gap-2 text-center">
+              <Cell
+                label={t('punch.scheduledStart')}
+                value={formatClock(checkInPreview.scheduledStart, branch.timezone)}
+              />
+              <div className="rounded-2xl bg-surface-sunken/60 px-2 py-2.5">
+                <dt className="eyebrow">{t('punch.status')}</dt>
+                <dd className="mt-1 flex justify-center">
+                  <StatusPill
+                    size="sm"
+                    status={checkInPreview.status}
+                    label={
+                      checkInPreview.status === ATTENDANCE_STATUS.LATE
+                        ? t('punch.lateBy', { duration: formatDuration(checkInPreview.lateMinutes) })
+                        : t('punch.onTime')
+                    }
+                  />
+                </dd>
+              </div>
             </dl>
           ) : null}
 
@@ -312,10 +366,12 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
   );
 }
 
-const Cell = ({ label, value }) => (
-  <div className="rounded-2xl bg-surface-sunken/60 px-2 py-2.5">
+const Cell = ({ label, value, tone }) => (
+  <div className={`rounded-2xl px-2 py-2.5 ${tone === 'ot' ? 'bg-ot-soft' : 'bg-surface-sunken/60'}`}>
     <dt className="eyebrow">{label}</dt>
-    <dd className="mt-0.5 text-sm font-bold text-ink tabular">{value}</dd>
+    <dd className={`mt-0.5 text-sm font-bold tabular ${tone === 'ot' ? 'text-ot-ink' : 'text-ink'}`}>
+      {value}
+    </dd>
   </div>
 );
 
