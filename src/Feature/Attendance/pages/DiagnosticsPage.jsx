@@ -7,6 +7,8 @@ import { LuCircleCheck, LuCircleX, LuLoaderCircle, LuTriangleAlert } from 'react
 import { auth, db } from '../config/firebase';
 import { COLLECTIONS } from '../services/paths';
 import { ADMIN_EMAILS, isAllowlistedAdmin } from '../auth/admins';
+import { BRANCH_IDS } from '../config/branches';
+import { ROLES } from '../config/roles';
 
 /**
  * `/attendance/diagnostics` — no gate, reachable by anyone with the URL.
@@ -95,6 +97,18 @@ export default function DiagnosticsPage() {
    * real data. The document ID makes it unmistakable if it were ever left
    * behind, and the delete runs even when create succeeded but something
    * else in the app is watching the collection — cleanup is not optional.
+   *
+   * The payload matters. `firestore.rules` (the production ruleset, unlike
+   * the development one) gates a staff create on
+   * `isAdmin() && staffShapeIsValid()` — TWO conditions, not one — and an
+   * earlier version of this probe wrote `{ diagnosticProbe: true }`, which
+   * satisfies neither `branchId is string` nor `role in [...]` nor
+   * `active is bool`. That is a shape failure, not an admin failure, but
+   * Firestore reports both as the identical "permission-denied": this check
+   * was giving a real admin a false "you are not an admin" under the rules
+   * that matter most. The fields below are exactly what "Add staff" itself
+   * writes, so this now tests the same two-part gate Add Staff does, not a
+   * stricter one.
    */
   const runWriteCheck = async () => {
     setWriteRunning(true);
@@ -102,7 +116,12 @@ export default function DiagnosticsPage() {
     let create = null;
     let del = null;
     try {
-      await setDoc(ref, { diagnosticProbe: true, at: Date.now() });
+      await setDoc(ref, {
+        branchId: BRANCH_IDS[0],
+        name: 'Diagnostics probe',
+        role: ROLES.SALES_ASSOCIATE,
+        active: true,
+      });
       create = { ok: true };
     } catch (error) {
       create = { ok: false, code: error?.code ?? 'unknown', message: error?.message ?? String(error) };
