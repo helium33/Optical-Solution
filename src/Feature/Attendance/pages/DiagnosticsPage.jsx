@@ -2,13 +2,15 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDocs, limit, query, setDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { LuCircleCheck, LuCircleX, LuLoaderCircle, LuTriangleAlert } from 'react-icons/lu';
 
-import { auth, db } from '../config/firebase';
+import { auth, db, functions } from '../config/firebase';
 import { COLLECTIONS } from '../services/paths';
 import { ADMIN_EMAILS, isAllowlistedAdmin } from '../auth/admins';
 import { BRANCH_IDS } from '../config/branches';
 import { ROLES } from '../config/roles';
+import { isCallableUnavailable } from '../lib/callableErrors';
 
 /**
  * `/attendance/diagnostics` — no gate, reachable by anyone with the URL.
@@ -40,12 +42,34 @@ const CHECKED_COLLECTIONS = [
   { key: COLLECTIONS.ATTENDANCE_MONTHLY, label: 'attendanceMonthly', why: 'the admin Monthly tab' },
 ];
 
+/**
+ * Cloud Functions this app calls, none of them deployed yet. Every payload is
+ * nonsense on purpose — a branch/staff id that cannot exist — so even a real,
+ * deployed function has nothing to act on: this only ever proves whether the
+ * request reaches a function at all, never a real PIN check or punch.
+ *
+ * Four "Missing or insufficient permissions." / "Cannot reach the server"
+ * reports running through this exact conversation each turned out to be the
+ * same root cause — nothing deployed — surfacing as a different error code
+ * every time (`functions/not-found`, `functions/internal`, a bare
+ * `unavailable`, ...). Guessing one code at a time does not scale. This
+ * section shows the RAW code and message for each callable directly, so the
+ * next shape is read off the screen instead of described secondhand.
+ */
+const CHECKED_CALLABLES = [
+  { name: 'verifyBranchPin', payload: { branchId: '__diagnostics_probe__', pin: '0000' }, why: 'unlocking the kiosk' },
+  { name: 'submitPunch', payload: { kind: 'check_in', branchId: '__diagnostics_probe__', staffId: '__diagnostics_probe__' }, why: 'a verified clock-in/out' },
+  { name: 'setStaffPin', payload: { staffId: '__diagnostics_probe__', pin: '0000' }, why: 'giving a new employee a PIN' },
+];
+
 export default function DiagnosticsPage() {
   const [authState, setAuthState] = useState({ status: 'checking' });
   const [results, setResults] = useState(null);
   const [running, setRunning] = useState(false);
   const [writeCheck, setWriteCheck] = useState(null);
   const [writeRunning, setWriteRunning] = useState(false);
+  const [callableResults, setCallableResults] = useState(null);
+  const [callableRunning, setCallableRunning] = useState(false);
 
   useEffect(
     () =>
@@ -89,6 +113,41 @@ export default function DiagnosticsPage() {
   useEffect(() => {
     runChecks();
   }, [runChecks]);
+
+  /**
+   * Calls every callable this app uses, with a payload that cannot match a
+   * real record even on a fully deployed backend. Automatic, like the read
+   * checks: a request that can never touch real data needs no confirmation
+   * button, and this is the single check most worth seeing without an extra
+   * click — every "Cannot reach the server" / "Missing or insufficient
+   * permissions" report so far has traced back to one of these being
+   * unreachable, in a different disguise each time.
+   */
+  const runCallableChecks = useCallback(async () => {
+    setCallableRunning(true);
+    const next = [];
+    for (const { name, payload, why } of CHECKED_CALLABLES) {
+      try {
+        const response = await httpsCallable(functions, name)(payload);
+        next.push({ name, why, ok: true, data: response?.data });
+      } catch (error) {
+        next.push({
+          name,
+          why,
+          ok: false,
+          code: error?.code ?? 'unknown',
+          message: error?.message ?? String(error),
+          recognizedAsUnavailable: isCallableUnavailable(error),
+        });
+      }
+    }
+    setCallableResults(next);
+    setCallableRunning(false);
+  }, []);
+
+  useEffect(() => {
+    runCallableChecks();
+  }, [runCallableChecks]);
 
   /**
    * Writes and immediately deletes one throwaway document at
@@ -254,9 +313,65 @@ export default function DiagnosticsPage() {
         )}
       </Section>
 
+      {/* ---- live callables ---- */}
+      <Section
+        title="4. Are the callable functions reachable?"
+        action={
+          <button
+            type="button"
+            onClick={runCallableChecks}
+            disabled={callableRunning}
+            className="rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:text-ink disabled:opacity-50"
+          >
+            {callableRunning ? 'Running…' : 'Re-run'}
+          </button>
+        }
+      >
+        <p className="mb-3 text-xs leading-relaxed text-ink-subtle">
+          Every payload names a branch/employee id that cannot exist, so even a
+          fully deployed, correctly working backend has nothing to act on here
+          — this only shows whether the request reaches a function at all, in
+          whatever shape a request-to-nothing actually comes back as. None of
+          your nine callables are deployed yet, so every row below is expected
+          to fail; what matters is the exact code.
+        </p>
+        {!callableResults ? (
+          <Row icon={<LuLoaderCircle className="h-4 w-4 animate-spin" />} tone="pending">
+            Running…
+          </Row>
+        ) : (
+          <div className="space-y-3">
+            {callableResults.map((r) => (
+              <div key={r.name}>
+                <Row icon={r.ok ? <LuCircleCheck className="h-4 w-4" /> : <LuCircleX className="h-4 w-4" />} tone={r.ok ? 'good' : 'bad'}>
+                  <code className="font-semibold">{r.name}</code>
+                  <span className="text-ink-subtle"> — used by {r.why}</span>
+                </Row>
+                {!r.ok ? (
+                  <p className="ml-6 mt-1 text-xs text-danger-ink/85">
+                    <code>{r.code}</code>: {r.message}
+                    {!r.recognizedAsUnavailable ? (
+                      <span className="ml-1 font-semibold text-warn-ink">
+                        — a new code this app does not yet recognise as &ldquo;not deployed&rdquo;;
+                        send this exact line to get it added.
+                      </span>
+                    ) : null}
+                  </p>
+                ) : (
+                  <p className="ml-6 mt-1 text-xs text-ink-subtle">
+                    Reached and responded — this callable IS deployed. Response:{' '}
+                    <code>{JSON.stringify(r.data)}</code>
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
       {/* ---- live write ---- */}
       <Section
-        title="4. Can this identity write as an admin?"
+        title="5. Can this identity write as an admin?"
         action={
           <button
             type="button"
