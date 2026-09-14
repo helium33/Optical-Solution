@@ -44,6 +44,11 @@ export default function KioskPage() {
   const [logs, setLogs] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  /* Firestore's own sentence for the failure, kept alongside the translated
+     one. For a missing index that sentence carries the console URL that
+     creates it, which is the entire fix — paraphrasing it away leaves the
+     reader with a problem and no link. */
+  const [loadErrorDetail, setLoadErrorDetail] = useState(null);
 
   const geo = useGeoFence(branch, { enabled: Boolean(branch) });
 
@@ -74,10 +79,22 @@ export default function KioskPage() {
       /* A key, not the sentence, so it re-renders in whichever language the
          reader picks next. "Missing or insufficient permissions" is Firebase's
          own wording and says nothing about the cause: the tablet IS signed in,
-         the rules simply were never deployed for these collections. */
+         the rules simply were never deployed for these collections.
+
+         The roster query filters on branchId and active and orders by name,
+         which Firestore cannot serve without the composite index declared in
+         firestore.indexes.json. Until that is deployed it answers
+         `failed-precondition`, and treating anything-but-permission-denied as
+         "no error" rendered a real, fixable failure as the benign "nobody has
+         been added yet" hint — advice for a problem the reader does not have. */
       setLoadError(
-        error?.code === 'permission-denied' ? 'errors.rulesNotDeployed' : null,
+        error?.code === 'permission-denied'
+          ? 'errors.rulesNotDeployed'
+          : error?.code === 'failed-precondition'
+            ? 'errors.indexMissing'
+            : null,
       );
+      setLoadErrorDetail(error?.code ? `${error.code}: ${error.message ?? ''}` : null);
     });
   }, [branchId]);
 
@@ -188,7 +205,12 @@ export default function KioskPage() {
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">
             {t(loadError ?? 'kiosk.noStaffHint')}
           </p>
-          {loadError === 'errors.rulesNotDeployed' ? (
+          {loadError && loadErrorDetail ? (
+            <p className="mx-auto mt-2 max-w-prose break-words text-[11px] leading-relaxed text-ink-subtle">
+              {loadErrorDetail}
+            </p>
+          ) : null}
+          {loadError ? (
             <Link
               to="/attendance/diagnostics"
               className="mt-3 inline-block text-xs font-bold text-brand-ink hover:underline"

@@ -130,7 +130,8 @@
     "anonymousDisabled": "Firebase → Authentication → Sign-in method တွင် Anonymous sign-in ကို ဖွင့်ပါ။ ဝန်ထမ်းစာရင်းကို ဖတ်နိုင်ရန် ဤတက်ဘလက်တွင် အထောက်အထားတစ်ခု လိုအပ်ပါသည်။",
     "notDeployed": "ဆာဗာတွင် PIN စစ်ဆေးမှု မတပ်ဆင်ရသေးပါ။ verifyBranchPin function ကို deploy လုပ်ပါ၊ သို့မဟုတ် စမ်းသပ်ရန် VITE_ALLOW_CLIENT_PUNCH=true ဟု သတ်မှတ်ပါ။",
     "timeout": "ဆာဗာမှ အကြောင်းပြန်မှု မရရှိပါ။ ချိတ်ဆက်မှုကို စစ်ဆေးပြီး ထပ်ကြိုးစားပါ။",
-    "rulesNotDeployed": "ဤတက်ဘလက်သည် ဝင်ရောက်ပြီးဖြစ်သော်လည်း Firestore က ဝန်ထမ်းစာရင်းကို ပေးပို့ရန် ငြင်းဆိုနေသည် — attendance collection များအတွက် လုံခြုံရေးစည်းမျဉ်းများ တင်ထားခြင်း မရှိသေးပါ။ `npm run merge:rules` ကို run ပြီး ရလဒ်ကို publish လုပ်ပါ။"
+    "rulesNotDeployed": "ဤတက်ဘလက်သည် ဝင်ရောက်ပြီးဖြစ်သော်လည်း Firestore က ဝန်ထမ်းစာရင်းကို ပေးပို့ရန် ငြင်းဆိုနေသည် — attendance collection များအတွက် လုံခြုံရေးစည်းမျဉ်းများ တင်ထားခြင်း မရှိသေးပါ။ `npm run merge:rules` ကို run ပြီး ရလဒ်ကို publish လုပ်ပါ။",
+    "indexMissing": "ဝန်ထမ်းစာရင်း query အတွက် Firestore index မဖန်တီးရသေးပါ။ `firebase deploy --only firestore:indexes` ကို run ပါ၊ သို့မဟုတ် အောက်ပါစာသားထဲက လင့်ခ်ကို နှိပ်ပါ — မှန်ကန်သော index ကို တိုက်ရိုက်ဖန်တီးပေးပါမည်။ Index ပြီးမြောက်ရန် တစ်မိနစ်နှစ်မိနစ် ကြာပါသည်။"
   },
   "admin": {
     "title": "ချိန်မှတ်စနစ်",
