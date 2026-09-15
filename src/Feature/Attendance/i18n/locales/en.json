@@ -160,7 +160,7 @@
     "kioskSessionExpired": "This tablet's sign-in has expired. Lock the kiosk and unlock it again with the branch PIN — the roster cannot be read without an identity.",
     "indexMissing": "The roster query needs a Firestore index that has not been created yet. Run `firebase deploy --only firestore:indexes`, or open the link in the message below — it creates exactly the right index. Indexes take a minute or two to build.",
     "noPinSet": "No PIN has been set for you yet. Ask a supervisor to set one.",
-    "pinUnreadable": "PIN sign-in is not switched on for this project yet."
+    "pinUnreadable": "Firestore is refusing to read or write PINs. This is the rules, not the PIN: run `npm run merge:rules`, paste firestore.rules.merged into Firebase Console → Firestore → Rules, and Publish."
   },
   "admin": {
     "title": "Attendance",
@@ -211,7 +211,25 @@
     "checkingSession": "Checking your session…",
     "notConfigured": "Firebase is not configured. Copy .env.example to .env, fill in the project values and restart the dev server.",
     "staffDoNotSignIn": "Shop staff do not sign in here —",
-    "openTheKiosk": "open the kiosk"
+    "openTheKiosk": "open the kiosk",
+    "employeeManagement": "Employee management",
+    "employeeManagementIntro": "Every employee, their PIN and their details. A PIN is only fetched when you open the eye — it is never loaded with the table.",
+    "colName": "Name",
+    "colRole": "Role",
+    "colBranch": "Branch",
+    "colPin": "PIN",
+    "colActions": "Actions",
+    "showPin": "Show PIN",
+    "hidePin": "Hide PIN",
+    "pinNoneSet": "Not set",
+    "pinDenied": "Admin only",
+    "pinCurrent": "Current: {{pin}}",
+    "pinLeaveBlank": "Leave blank to keep the current PIN. Type four digits to replace it.",
+    "editEmployee": "Edit employee",
+    "noStaffYet": "No employees yet",
+    "nameRequired": "A name is required.",
+    "pinFourDigits": "The PIN must be exactly 4 digits.",
+    "pinReserved": "That PIN is reserved by the system. Choose another."
   },
   "monthly": {
     "title": "Monthly summary",

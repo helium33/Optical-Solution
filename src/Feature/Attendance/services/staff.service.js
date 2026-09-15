@@ -281,4 +281,23 @@ export async function setStaffRole(staffId, role, actorUid) {
   });
 }
 
+/**
+ * Edit the details an administrator can change from the employee table.
+ *
+ * Only the four fields the form offers are written, rather than spreading
+ * whatever the caller passes: a staff document also carries the
+ * attendance-facing fields (active, joinedAt, webauthnCredentialCount) and an
+ * edit form has no business touching those by accident.
+ */
+export async function updateStaffDetails(staffId, { name, role, branchId, employeeCode }, actorUid) {
+  await updateDoc(staffDoc(staffId), {
+    name,
+    role,
+    branchId,
+    employeeCode: employeeCode || null,
+    updatedAt: serverTimestamp(),
+    updatedBy: actorUid,
+  });
+}
+
 

@@ -115,7 +115,17 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
       onAdded?.(staffId);
       onClose?.();
     } catch (submitError) {
-      setError(submitError?.message ?? 'Could not add that employee.');
+      /* "Missing or insufficient permissions" is Firebase's sentence and it
+         names nothing an operator can act on. On this form it has one cause
+         worth naming: the attendance rules have not been published, so the
+         staff write (or the PIN write next to it) is refused. */
+      setError(
+        submitError?.code === 'permission-denied'
+          ? 'Firestore refused the write. The attendance security rules have not been ' +
+              'published yet: run `npm run merge:rules`, paste firestore.rules.merged into ' +
+              'Firebase Console → Firestore → Rules, and click Publish.'
+          : (submitError?.message ?? 'Could not add that employee.'),
+      );
       setErrorCode(submitError?.code ?? null);
     } finally {
       setBusy(false);

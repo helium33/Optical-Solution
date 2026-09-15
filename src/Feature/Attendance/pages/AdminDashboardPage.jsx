@@ -17,6 +17,8 @@ import AttendanceTable from '../components/dashboard/AttendanceTable';
 import OrgTree from '../components/dashboard/OrgTree';
 import AddStaffDialog from '../components/dashboard/AddStaffDialog';
 import StaffDetailDialog from '../components/dashboard/StaffDetailDialog';
+import EmployeeTable from '../components/dashboard/EmployeeTable';
+import EditStaffDialog from '../components/dashboard/EditStaffDialog';
 import BranchSettingsDialog from '../components/dashboard/BranchSettingsDialog';
 import MonthlySummary from '../components/dashboard/MonthlySummary';
 import Segmented from '../components/ui/Segmented';
@@ -54,6 +56,7 @@ export default function AdminDashboardPage() {
   const [addingTo, setAddingTo] = useState(null);
   const [detailFor, setDetailFor] = useState(null);
   const [settingsFor, setSettingsFor] = useState(null);
+  const [editingStaff, setEditingStaff] = useState(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const { get: getBranch, branches: branchList } = useBranches();
@@ -222,6 +225,16 @@ export default function AdminDashboardPage() {
               onAdd={setAddingTo}
               onSettings={setSettingsFor}
             />
+
+            <div className="mt-8">
+              <h3 className="mb-1 text-sm font-bold tracking-tight text-ink">
+                {t('admin.employeeManagement')}
+              </h3>
+              <p className="mb-3 text-xs leading-relaxed text-ink-muted">
+                {t('admin.employeeManagementIntro')}
+              </p>
+              <EmployeeTable staff={roster} onEdit={setEditingStaff} />
+            </div>
           </section>
         ) : view === 'monthly' ? (
           <MonthlySummary branchIds={branchIds} roster={activeRoster} timeZone={timezone} />
@@ -301,6 +314,14 @@ export default function AdminDashboardPage() {
         branch={settingsFor}
         actor={principal}
         onClose={() => setSettingsFor(null)}
+      />
+
+      <EditStaffDialog
+        open={Boolean(editingStaff)}
+        staff={editingStaff}
+        actor={principal}
+        onClose={() => setEditingStaff(null)}
+        onSaved={() => setRefreshNonce((n) => n + 1)}
       />
 
       <StaffDetailDialog

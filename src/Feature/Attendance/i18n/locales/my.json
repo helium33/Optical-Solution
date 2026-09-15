@@ -160,7 +160,7 @@
     "kioskSessionExpired": "ဤတက်ဘလက်၏ ဝင်ရောက်မှု သက်တမ်းကုန်သွားပါပြီ။ Kiosk ကို lock လုပ်ပြီး ဆိုင်ခွဲ PIN ဖြင့် ပြန်ဖွင့်ပါ — အထောက်အထားမရှိဘဲ ဝန်ထမ်းစာရင်းကို ဖတ်၍မရပါ။",
     "indexMissing": "ဝန်ထမ်းစာရင်း query အတွက် Firestore index မဖန်တီးရသေးပါ။ `firebase deploy --only firestore:indexes` ကို run ပါ၊ သို့မဟုတ် အောက်ပါစာသားထဲက လင့်ခ်ကို နှိပ်ပါ — မှန်ကန်သော index ကို တိုက်ရိုက်ဖန်တီးပေးပါမည်။ Index ပြီးမြောက်ရန် တစ်မိနစ်နှစ်မိနစ် ကြာပါသည်။",
     "noPinSet": "သင့်အတွက် PIN သတ်မှတ်မထားသေးပါ။ ကြီးကြပ်ရေးမှူးထံ တောင်းပါ။",
-    "pinUnreadable": "ဤစနစ်တွင် PIN ဖြင့် ဝင်ရောက်ခြင်းကို ဖွင့်မထားသေးပါ။"
+    "pinUnreadable": "Firestore က PIN ကို ဖတ်/ရေး ခွင့်မပြုပါ။ ဤသည်မှာ PIN ပြဿနာ မဟုတ်ဘဲ rules ပြဿနာဖြစ်သည် — `npm run merge:rules` ကို run ပြီး firestore.rules.merged ကို Firebase Console → Firestore → Rules တွင် paste လုပ်၍ Publish နှိပ်ပါ။"
   },
   "admin": {
     "title": "ချိန်မှတ်စနစ်",
@@ -211,7 +211,25 @@
     "checkingSession": "သင့်အကောင့်ကို စစ်ဆေးနေပါသည်…",
     "notConfigured": "Firebase ကို ပြင်ဆင်သတ်မှတ်ထားခြင်း မရှိပါ။ .env.example ကို .env အဖြစ် ကူးယူပြီး ပရောဂျက်တန်ဖိုးများ ဖြည့်ကာ dev server ကို ပြန်စတင်ပါ။",
     "staffDoNotSignIn": "ဆိုင်ဝန်ထမ်းများ ဤနေရာတွင် ဝင်ရောက်ရန် မလိုပါ —",
-    "openTheKiosk": "တက်ဘလက်စာမျက်နှာ ဖွင့်မည်"
+    "openTheKiosk": "တက်ဘလက်စာမျက်နှာ ဖွင့်မည်",
+    "employeeManagement": "ဝန်ထမ်း စီမံခန့်ခွဲမှု",
+    "employeeManagementIntro": "ဝန်ထမ်းတိုင်း၏ PIN နှင့် အချက်အလက်များ။ မျက်လုံးအမှတ်ကို နှိပ်မှသာ PIN ကို ခေါ်ယူပါသည် — ဇယားနှင့်အတူ ကြိုတင်မခေါ်ပါ။",
+    "colName": "အမည်",
+    "colRole": "ရာထူး",
+    "colBranch": "ဆိုင်ခွဲ",
+    "colPin": "PIN",
+    "colActions": "လုပ်ဆောင်ချက်",
+    "showPin": "PIN ပြမည်",
+    "hidePin": "PIN ဖျောက်မည်",
+    "pinNoneSet": "မသတ်မှတ်ရသေး",
+    "pinDenied": "Admin သာ",
+    "pinCurrent": "လက်ရှိ: {{pin}}",
+    "pinLeaveBlank": "လက်ရှိ PIN အတိုင်းထားလိုပါက ကွက်လပ်ထားပါ။ ပြောင်းလိုပါက ဂဏန်းလေးလုံး ရိုက်ထည့်ပါ။",
+    "editEmployee": "ဝန်ထမ်း အချက်အလက် ပြင်ဆင်ရန်",
+    "noStaffYet": "ဝန်ထမ်း မရှိသေးပါ",
+    "nameRequired": "အမည် ဖြည့်ရန် လိုအပ်သည်။",
+    "pinFourDigits": "PIN သည် ဂဏန်းလေးလုံး အတိအကျ ဖြစ်ရပါမည်။",
+    "pinReserved": "ထို PIN ကို စနစ်က သီးသန့်ထားသည်။ အခြားတစ်ခု ရွေးပါ။"
   },
   "monthly": {
     "title": "လစဉ် အနှစ်ချုပ်",
