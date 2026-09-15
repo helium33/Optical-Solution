@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { LuGlasses, LuArrowRight, LuArrowLeft, LuUsers } from 'react-icons/lu';
 
 import PinPad from '../components/kiosk/PinPad';
+import OvertimeToggle from '../components/kiosk/OvertimeToggle';
 import BranchHierarchyDialog from '../components/kiosk/BranchHierarchyDialog';
 import ThemeToggle from '../components/ui/ThemeToggle';
 import LanguageToggle from '../components/ui/LanguageToggle';
 import Spinner from '../components/ui/Spinner';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useBranches } from '../config/BranchesProvider';
-import { unlockKiosk } from '../services/verification.service';
+import { unlockKiosk, unlockWithStaffPin } from '../services/verification.service';
 import { openKioskSession } from '../services/kioskSession';
 import { ADMIN_SEQUENCE } from '../services/adminReveal';
 
@@ -34,6 +35,7 @@ export default function KioskGatePage() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [hierarchyOpen, setHierarchyOpen] = useState(false);
+  const [overtime, setOvertime] = useState(false);
   /* A ref, not the state, guards re-entry: state is a render behind. */
   const busyRef = useRef(false);
 
@@ -78,6 +80,30 @@ export default function KioskGatePage() {
           return;
         }
 
+        /* Not the branch PIN. Ask the other question these four digits could
+           be answering: is this somebody's own PIN? One keypad, because a
+           staff member should not have to get the shared roster unlocked for
+           them before they can reach their own screen. */
+        if (result.reason === 'wrong-pin') {
+          const asStaff = await unlockWithStaffPin(branch.id, value);
+          if (asStaff.ok) {
+            openKioskSession(branch.id, { ttlMinutes: result.ttlMinutes ?? 840 });
+            navigate(`/attendance/kiosk/${branch.id}`, {
+              replace: true,
+              state: { staffId: asStaff.staff.id, pin: value, overtime },
+            });
+            return;
+          }
+          /* A failure that is not "nobody matched" is worth reporting as
+             itself — an unenabled anonymous sign-in or unpublished rules say
+             nothing about whether the PIN was right. */
+          if (asStaff.reason !== 'wrong-pin') {
+            setPin('');
+            setError(errorKeyFor(asStaff.reason));
+            return;
+          }
+        }
+
         setPin('');
         setError(errorKeyFor(result.reason));
       } catch {
@@ -90,7 +116,7 @@ export default function KioskGatePage() {
         setBusy(false);
       }
     },
-    [branch, navigate],
+    [branch, navigate, overtime],
   );
 
   const onPinChange = useCallback(
@@ -122,7 +148,7 @@ export default function KioskGatePage() {
           </span>
           <h1 className="text-2xl font-bold tracking-tight text-ink">{t('kiosk.brand')}</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            {branch ? t('kiosk.unlock', { branch: branch.shortName }) : t('kiosk.whichShop')}
+            {branch ? t('kiosk.unlockOrOwnPin', { branch: branch.shortName }) : t('kiosk.whichShop')}
           </p>
         </div>
 
@@ -158,6 +184,18 @@ export default function KioskGatePage() {
               </div>
             ) : (
               <>
+                {/* ---- OVERTIME: above the keypad, decided before the PIN ----
+                    Nobody has said who they are yet, so there is no shift to
+                    measure — the switch records the intent and the figure is
+                    worked out once the PIN names the person. */}
+                <div className="mb-5">
+                  <OvertimeToggle
+                    checked={overtime}
+                    onChange={setOvertime}
+                    unknownEligibility
+                  />
+                </div>
+
                 <PinPad value={pin} onChange={onPinChange} length={4} error={Boolean(error)} />
                 {error ? (
                   <div className="mt-5 text-center">
@@ -239,6 +277,8 @@ function errorKeyFor(reason) {
     case 'unavailable':
     case 'sign-in-failed':
       return 'errors.noServer';
+    case 'rules-not-published':
+      return 'errors.rulesNotPublished';
     default:
       return 'errors.wrongBranchPin';
   }

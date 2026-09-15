@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -86,6 +87,14 @@ export function subscribeAllStaff(onChange, onError) {
     (snapshot) => onChange(snapshot.docs.map(shape).sort(byRoleThenName)),
     onError,
   );
+}
+
+/** One read of a branch's active roster, rank-ordered. */
+export async function fetchBranchStaff(branchId) {
+  const snapshot = await getDocs(
+    query(staffCol(), where('branchId', '==', branchId), where('active', '==', true)),
+  );
+  return snapshot.docs.map(shape).sort(byRoleThenName);
 }
 
 export async function createStaff({ branchId, name, role, employeeCode, phone = null }, actorUid) {

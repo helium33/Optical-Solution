@@ -54,7 +54,8 @@
     "unknownBranch": "ဆိုင်ခွဲ မသိရှိပါ",
     "fingerprintEnrolled": "လက်ဗွေ မှတ်ပုံတင်ပြီး",
     "runDiagnostics": "စစ်ဆေးရန် →",
-    "viewBranch": "Branch ကြည့်ရန်"
+    "viewBranch": "Branch ကြည့်ရန်",
+    "unlockOrOwnPin": "{{branch}} ဖွင့်ရန် ဆိုင်ခွဲ PIN၊ သို့မဟုတ် သင့်မှတ်တမ်းအတွက် သင့်ကိုယ်ပိုင် PIN"
   },
   "hierarchy": {
     "title": "ဆိုင်ခွဲ ဖွဲ့စည်းပုံ",
@@ -117,7 +118,8 @@
     "withinGrace": "အလုပ်ဆင်းချိန်နောက် ပထမ {{count}} မိနစ်ကို အချိန်ပိုအဖြစ် မတွက်ပါ။",
     "sessionOpen": "အချိန်ပိုကို ထွက်ချိန်မှတ်သည့်အခါ တွက်ချက်ပါမည်။",
     "none": "ဤအလုပ်ချိန်အတွက် အချိန်ပို မရှိပါ။",
-    "cappedNotice": "တစ်ရက်လျှင် {{cap}} ထက် ကျော်နေသဖြင့် {{cap}} ကိုသာ မှတ်တမ်းတင်ပြီး ကျန်အချိန်ကို ကြီးကြပ်ရေးမှူးက စစ်ဆေးပါမည်။"
+    "cappedNotice": "တစ်ရက်လျှင် {{cap}} ထက် ကျော်နေသဖြင့် {{cap}} ကိုသာ မှတ်တမ်းတင်ပြီး ကျန်အချိန်ကို ကြီးကြပ်ရေးမှူးက စစ်ဆေးပါမည်။",
+    "beforeYouKnowWho": "အလုပ်ဆင်းချိန်ကျော်ပြီး ထွက်ချိန်မှတ်မလား။ ဤနေရာတွင် တောင်းခံပါ။"
   },
   "location": {
     "finding": "တည်နေရာ ရှာနေပါသည်…",
@@ -160,7 +162,8 @@
     "kioskSessionExpired": "ဤတက်ဘလက်၏ ဝင်ရောက်မှု သက်တမ်းကုန်သွားပါပြီ။ Kiosk ကို lock လုပ်ပြီး ဆိုင်ခွဲ PIN ဖြင့် ပြန်ဖွင့်ပါ — အထောက်အထားမရှိဘဲ ဝန်ထမ်းစာရင်းကို ဖတ်၍မရပါ။",
     "indexMissing": "ဝန်ထမ်းစာရင်း query အတွက် Firestore index မဖန်တီးရသေးပါ။ `firebase deploy --only firestore:indexes` ကို run ပါ၊ သို့မဟုတ် အောက်ပါစာသားထဲက လင့်ခ်ကို နှိပ်ပါ — မှန်ကန်သော index ကို တိုက်ရိုက်ဖန်တီးပေးပါမည်။ Index ပြီးမြောက်ရန် တစ်မိနစ်နှစ်မိနစ် ကြာပါသည်။",
     "noPinSet": "သင့်အတွက် PIN သတ်မှတ်မထားသေးပါ။ ကြီးကြပ်ရေးမှူးထံ တောင်းပါ။",
-    "pinUnreadable": "Firestore က PIN ကို ဖတ်/ရေး ခွင့်မပြုပါ။ ဤသည်မှာ PIN ပြဿနာ မဟုတ်ဘဲ rules ပြဿနာဖြစ်သည် — `npm run merge:rules` ကို run ပြီး firestore.rules.merged ကို Firebase Console → Firestore → Rules တွင် paste လုပ်၍ Publish နှိပ်ပါ။"
+    "pinUnreadable": "Firestore က PIN ကို ဖတ်/ရေး ခွင့်မပြုပါ။ ဤသည်မှာ PIN ပြဿနာ မဟုတ်ဘဲ rules ပြဿနာဖြစ်သည် — `npm run merge:rules` ကို run ပြီး firestore.rules.merged ကို Firebase Console → Firestore → Rules တွင် paste လုပ်၍ Publish နှိပ်ပါ။",
+    "rulesNotPublished": "Firestore က ဝန်ထမ်းစာရင်းကို ဖတ်ခွင့်မပြုပါ။ Rules မတင်ရသေးပါ — `npm run merge:rules` ကို run ပြီး publish လုပ်ပါ။"
   },
   "admin": {
     "title": "ချိန်မှတ်စနစ်",

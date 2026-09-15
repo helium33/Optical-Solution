@@ -33,11 +33,17 @@ export default function OvertimeToggle({
      than the keypad — so the instruction has to name the step that actually
      follows, or it points at a PIN pad that is not on screen. */
   commitsWithoutPin = false,
+  /* On the unlock keypad nobody has identified themselves yet, so there is no
+     shift to measure and no figure to show. The switch still has to be there
+     and still has to be tappable — the claim is made before the PIN, and the
+     PIN is what says who is claiming. The real eligibility is worked out once
+     the person is known, and an unclaimable one is simply ignored. */
+  unknownEligibility = false,
 }) {
   const { t } = useTranslation();
 
   const eligible = eligibleMinutes > 0;
-  const isDisabled = disabled || !eligible;
+  const isDisabled = disabled || (!eligible && !unknownEligibility);
   const capped = capMinutes != null && eligibleMinutes > capMinutes;
 
   const explain = () => {
@@ -52,7 +58,7 @@ export default function OvertimeToggle({
       className={`rounded-3xl border-2 p-1 transition-all duration-400 ease-expo ${
         checked
           ? 'border-ot bg-ot-soft shadow-glow-ot'
-          : eligible
+          : eligible || unknownEligibility
             ? 'border-ot/35 bg-ot-soft/40'
             : 'border-line bg-surface-sunken'
       }`}
@@ -86,6 +92,15 @@ export default function OvertimeToggle({
                 {!checked ? (
                   <strong className="ml-1 font-bold text-ot-ink">
                     {t(commitsWithoutPin ? 'overtime.tapBeforeConfirm' : 'overtime.tapBeforePin')}
+                  </strong>
+                ) : null}
+              </>
+            ) : unknownEligibility ? (
+              <>
+                {t('overtime.beforeYouKnowWho')}
+                {!checked ? (
+                  <strong className="ml-1 font-bold text-ot-ink">
+                    {t('overtime.tapBeforePin')}
                   </strong>
                 ) : null}
               </>

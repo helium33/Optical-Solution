@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LuUsers, LuTimer, LuCircleCheck, LuTriangleAlert } from 'react-icons/lu';
 
@@ -56,6 +56,26 @@ export default function KioskPage() {
   const [signingIn, setSigningIn] = useState(null);
   const [session, setSession] = useState(null);
   const [loadError, setLoadError] = useState(null);
+
+  /**
+   * Arrived by typing a personal PIN at the unlock keypad rather than the
+   * branch one: open that person's screen straight away instead of showing
+   * them the shared roster they never asked for.
+   *
+   * Consumed once and then cleared from history, so a reload or a back button
+   * does not re-open somebody's records on a tablet they have walked away
+   * from.
+   */
+  const location = useLocation();
+  /* Captured once, on the first render, because the history entry is wiped
+     immediately afterwards and the roster it needs has not loaded yet. */
+  const [pendingSignIn, setPendingSignIn] = useState(() =>
+    location.state?.staffId ? location.state : null,
+  );
+  useEffect(() => {
+    if (!pendingSignIn) return;
+    navigate(`/attendance/kiosk/${branchId}`, { replace: true, state: null });
+  }, [pendingSignIn, branchId, navigate]);
   /* Firestore's own sentence for the failure, kept alongside the translated
      one. For a missing index that sentence carries the console URL that
      creates it, which is the entire fix — paraphrasing it away leaves the
@@ -127,6 +147,39 @@ export default function KioskPage() {
     if (!branchId || !dayKey || !uid) return undefined;
     return subscribeDayBoard(branchId, dayKey, setLogs, () => setLogs([]));
   }, [branchId, dayKey, uid]);
+
+  /* The roster is what turns the id the gate handed over into the person the
+     dashboard renders, so this waits for it rather than firing on mount. */
+  useEffect(() => {
+    if (!pendingSignIn || !staff?.length) return;
+    const person = staff.find((entry) => entry.id === pendingSignIn.staffId);
+    if (person) {
+      setSession({
+        staff: person,
+        pin: pendingSignIn.pin,
+        overtime: pendingSignIn.overtime,
+        /* They never asked for the shared roster — they typed their own PIN at
+           a locked tablet. Closing their screen has to lock it again rather
+           than leave them, and whoever walks up next, on everyone's records. */
+        fromGate: true,
+      });
+    }
+    setPendingSignIn(null);
+  }, [pendingSignIn, staff]);
+
+  /* Ends a personal session. Someone who reached it by typing their own PIN
+     at a locked tablet is put back at the lock screen, not handed the shared
+     roster they never unlocked. */
+  const endStaffSession = useCallback(() => {
+    const cameFromGate = session?.fromGate;
+    setSession(null);
+    setSelected(null);
+    if (cameFromGate) {
+      closeKioskSession();
+      lockKiosk();
+      navigate('/attendance/kiosk', { replace: true });
+    }
+  }, [session, navigate]);
 
   const logsById = useMemo(() => {
     const map = new Map();
@@ -309,10 +362,7 @@ export default function KioskPage() {
           branch={branch}
           log={logsById.get(session.staff.id) ?? null}
           onPunch={() => setSelected(session.staff)}
-          onClose={() => {
-            setSession(null);
-            setSelected(null);
-          }}
+          onClose={endStaffSession}
         />
       ) : null}
 
@@ -327,7 +377,7 @@ export default function KioskPage() {
         initialOvertime={Boolean(session && selected && session.staff.id === selected.id && session.overtime)}
         /* Straight back to the shared roster once the punch lands: a personal
            screen left open on the counter is somebody's hours facing the shop. */
-        onSubmitted={() => setSession(null)}
+        onSubmitted={endStaffSession}
       />
     </KioskShell>
   );

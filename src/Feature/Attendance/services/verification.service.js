@@ -3,6 +3,7 @@ import { signInAnonymously, signInWithCustomToken, signOut } from 'firebase/auth
 
 import { auth, functions } from '../config/firebase';
 import { isCallableUnavailable } from '../lib/callableErrors';
+import { fetchBranchStaff, verifyStaffPin } from './staff.service';
 
 /**
  * Branch PIN verification, and the identity it hands back.
@@ -167,4 +168,73 @@ export async function unlockKiosk(branchId, pin) {
 /** Drop the kiosk identity as well as the local session. */
 export async function lockKiosk() {
   await signOut(auth).catch(() => {});
+}
+
+/**
+ * The same four digits, asked a second question: is this anybody's OWN PIN?
+ *
+ * The unlock keypad tries the branch PIN first. When that is not it, this runs,
+ * so one staff member can walk up to a locked tablet, type their own PIN, and
+ * land on their own screen without anyone having to unlock the shared roster
+ * for them first.
+ *
+ * It needs an identity before it can read anything — the verifier documents
+ * are gated on `signedIn()` — so it signs in anonymously BEFORE it knows
+ * whether the PIN belongs to anyone. Worth being plain about what that costs:
+ * under the development rules the branch PIN was never a security boundary
+ * anyway. Any signed-in session may read every roster, and anonymous sign-in
+ * is enabled, so anyone who can open the page could already have obtained one
+ * from a console. The branch PIN keeps the roster off the screen; it does not
+ * keep it out of the database. Deploying verifyBranchPin is what changes that,
+ * by scoping a kiosk token to one branch.
+ *
+ * A PIN that matches nobody leaves no trace: the anonymous session this
+ * created is signed out again, so a wrong guess does not quietly hand out a
+ * readable identity.
+ *
+ * @returns {Promise<{ok: boolean, staff?: object, reason?: string, message?: string}>}
+ */
+export async function unlockWithStaffPin(branchId, pin) {
+  const hadSessionAlready = Boolean(auth.currentUser);
+
+  if (!hadSessionAlready) {
+    try {
+      await signInAnonymously(auth);
+    } catch (error) {
+      if (
+        error?.code === 'auth/operation-not-allowed'
+        || error?.code === 'auth/admin-restricted-operation'
+      ) {
+        return { ok: false, reason: 'anonymous-disabled' };
+      }
+      return { ok: false, reason: 'sign-in-failed', message: error?.message };
+    }
+  }
+
+  let roster;
+  try {
+    roster = await fetchBranchStaff(branchId);
+  } catch (error) {
+    if (!hadSessionAlready) await signOut(auth).catch(() => {});
+    if (error?.code === 'permission-denied') return { ok: false, reason: 'rules-not-published' };
+    return { ok: false, reason: 'unavailable', message: error?.message };
+  }
+
+  /* Every candidate is derived at once rather than in turn. Each check is a
+     deliberately slow PBKDF2, and a shop of fifteen done one after another is
+     a keypad that appears to have frozen. */
+  const checked = await Promise.all(
+    roster.map(async (person) => ({
+      person,
+      ok: (await verifyStaffPin(person.id, pin).catch(() => ({ ok: false }))).ok,
+    })),
+  );
+
+  const match = checked.find((entry) => entry.ok);
+  if (!match) {
+    if (!hadSessionAlready) await signOut(auth).catch(() => {});
+    return { ok: false, reason: 'wrong-pin' };
+  }
+
+  return { ok: true, staff: match.person };
 }

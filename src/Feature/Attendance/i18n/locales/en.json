@@ -54,7 +54,8 @@
     "unknownBranch": "Unknown branch",
     "fingerprintEnrolled": "Fingerprint enrolled",
     "runDiagnostics": "Run diagnostics →",
-    "viewBranch": "View branch"
+    "viewBranch": "View branch",
+    "unlockOrOwnPin": "Branch PIN to open {{branch}}, or your own PIN for your records"
   },
   "hierarchy": {
     "title": "Branch structure",
@@ -117,7 +118,8 @@
     "withinGrace": "The first {{count}} minutes after the shift end are not counted as overtime.",
     "sessionOpen": "Overtime is worked out when you clock out.",
     "none": "No overtime available for this shift.",
-    "cappedNotice": "That is over the {{cap}} daily limit, so {{cap}} will be recorded and a supervisor will review the rest."
+    "cappedNotice": "That is over the {{cap}} daily limit, so {{cap}} will be recorded and a supervisor will review the rest.",
+    "beforeYouKnowWho": "Clocking out after your shift ended? Claim it here."
   },
   "location": {
     "finding": "Finding you…",
@@ -160,7 +162,8 @@
     "kioskSessionExpired": "This tablet's sign-in has expired. Lock the kiosk and unlock it again with the branch PIN — the roster cannot be read without an identity.",
     "indexMissing": "The roster query needs a Firestore index that has not been created yet. Run `firebase deploy --only firestore:indexes`, or open the link in the message below — it creates exactly the right index. Indexes take a minute or two to build.",
     "noPinSet": "No PIN has been set for you yet. Ask a supervisor to set one.",
-    "pinUnreadable": "Firestore is refusing to read or write PINs. This is the rules, not the PIN: run `npm run merge:rules`, paste firestore.rules.merged into Firebase Console → Firestore → Rules, and Publish."
+    "pinUnreadable": "Firestore is refusing to read or write PINs. This is the rules, not the PIN: run `npm run merge:rules`, paste firestore.rules.merged into Firebase Console → Firestore → Rules, and Publish.",
+    "rulesNotPublished": "Firestore refused to read the roster. The attendance rules have not been published: run `npm run merge:rules` and publish the result."
   },
   "admin": {
     "title": "Attendance",
