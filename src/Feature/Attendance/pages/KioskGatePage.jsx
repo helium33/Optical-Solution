@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LuGlasses, LuArrowRight, LuArrowLeft } from 'react-icons/lu';
+import { LuGlasses, LuArrowRight, LuArrowLeft, LuUsers } from 'react-icons/lu';
 
 import PinPad from '../components/kiosk/PinPad';
+import BranchHierarchyDialog from '../components/kiosk/BranchHierarchyDialog';
 import ThemeToggle from '../components/ui/ThemeToggle';
 import LanguageToggle from '../components/ui/LanguageToggle';
 import Spinner from '../components/ui/Spinner';
@@ -32,6 +33,7 @@ export default function KioskGatePage() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [hierarchyOpen, setHierarchyOpen] = useState(false);
   /* A ref, not the state, guards re-entry: state is a render behind. */
   const busyRef = useRef(false);
 
@@ -175,10 +177,23 @@ export default function KioskGatePage() {
                     ) : null}
                   </div>
                 ) : null}
+                {/* Above "choose a different shop", because it answers the
+                    question someone actually has at a locked keypad — "is this
+                    my branch, and who is on it?" — without being a way back
+                    out of the screen. */}
+                <button
+                  type="button"
+                  onClick={() => setHierarchyOpen(true)}
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface-card/70 px-4 py-3 text-sm font-bold text-ink shadow-soft transition-all duration-300 ease-expo hover:-translate-y-0.5 hover:shadow-lift tap-none"
+                >
+                  <LuUsers className="h-4 w-4 text-brand-ink" aria-hidden="true" />
+                  {t('kiosk.viewBranch')}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => { setSelected(null); setPin(''); setError(null); }}
-                  className="mt-6 inline-flex w-full items-center justify-center gap-2 text-xs font-semibold text-ink-subtle transition-colors hover:text-ink"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 text-xs font-semibold text-ink-subtle transition-colors hover:text-ink"
                 >
                   <LuArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
                   {t('kiosk.chooseAnother')}
@@ -190,6 +205,12 @@ export default function KioskGatePage() {
 
         <p className="mt-8 text-center text-xs text-ink-subtle">{t('kiosk.askSupervisor')}</p>
       </div>
+
+      <BranchHierarchyDialog
+        open={hierarchyOpen}
+        onClose={() => setHierarchyOpen(false)}
+        branch={branch}
+      />
     </div>
   );
 }

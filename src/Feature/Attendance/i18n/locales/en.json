@@ -53,7 +53,18 @@
     "staffAttendance": "Staff attendance",
     "unknownBranch": "Unknown branch",
     "fingerprintEnrolled": "Fingerprint enrolled",
-    "runDiagnostics": "Run diagnostics →"
+    "runDiagnostics": "Run diagnostics →",
+    "viewBranch": "View branch"
+  },
+  "hierarchy": {
+    "title": "Branch structure",
+    "namesAfterUnlock": "Names are not shown here. The roster is what the branch PIN protects — unlock the kiosk and everyone appears, grouped by these same tiers.",
+    "role": {
+      "supervisor": "Runs the branch. Approves overtime, corrects the log, changes the shift.",
+      "sales_leader": "Leads the floor team. Adds staff and corrects the branch log.",
+      "sales_executive": "Sells and sees the branch board for the day.",
+      "sales_associate": "Clocks in and out at this kiosk."
+    }
   },
   "punch": {
     "enterPin": "Enter your PIN",
