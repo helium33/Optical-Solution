@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { LuChevronDown, LuLock } from 'react-icons/lu';
 
 import Modal from '../ui/Modal';
+import BranchLogo from './BranchLogo';
 import { STAFF_ROLE_ORDER, ROLE_META, roleLabel } from '../../config/roles';
 
 /**
@@ -33,6 +34,14 @@ export default function BranchHierarchyDialog({ open, onClose, branch }) {
       subtitle={`${branch.name} · ${branch.shift.start}–${branch.shift.end}`}
       size="md"
     >
+      <div className="mb-5 flex items-center gap-3">
+        <BranchLogo branch={branch} size={44} />
+        <div className="min-w-0">
+          <p className="truncate text-[15px] font-bold tracking-tight text-ink">{branch.name}</p>
+          <p className="truncate text-xs text-ink-subtle">{branch.city}</p>
+        </div>
+      </div>
+
       <ol className="space-y-1">
         {TIERS.map((role, index) => (
           <li key={role}>

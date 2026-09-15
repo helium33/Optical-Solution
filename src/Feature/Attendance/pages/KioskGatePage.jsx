@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { LuGlasses, LuArrowRight, LuArrowLeft, LuUsers } from 'react-icons/lu';
 
 import PinPad from '../components/kiosk/PinPad';
+import BranchLogo from '../components/kiosk/BranchLogo';
 import OvertimeToggle from '../components/kiosk/OvertimeToggle';
 import BranchHierarchyDialog from '../components/kiosk/BranchHierarchyDialog';
 import ThemeToggle from '../components/ui/ThemeToggle';
@@ -143,9 +144,15 @@ export default function KioskGatePage() {
 
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <span className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-3xl bg-brand-600 text-brand-on shadow-glow">
-            <LuGlasses className="h-6 w-6" aria-hidden="true" />
-          </span>
+          {/* Once a shop is chosen its own mark replaces the house glasses, so
+              the keypad is visibly that shop's and not a generic one. */}
+          {branch ? (
+            <BranchLogo branch={branch} size={56} className="mx-auto mb-4 shadow-glow" />
+          ) : (
+            <span className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-3xl bg-brand-600 text-brand-on shadow-glow">
+              <LuGlasses className="h-6 w-6" aria-hidden="true" />
+            </span>
+          )}
           <h1 className="text-2xl font-bold tracking-tight text-ink">{t('kiosk.brand')}</h1>
           <p className="mt-1 text-sm text-ink-muted">
             {branch ? t('kiosk.unlockOrOwnPin', { branch: branch.shortName }) : t('kiosk.whichShop')}
@@ -162,7 +169,7 @@ export default function KioskGatePage() {
                 style={{ animationDelay: `${index * 70}ms` }}
                 className="group flex w-full animate-fade-up items-center gap-4 rounded-3xl border border-line bg-surface-card p-5 text-left shadow-soft transition-all duration-300 ease-expo hover:-translate-y-0.5 hover:shadow-lift tap-none"
               >
-                <BranchSwatch theme={entry.theme} />
+                <BranchLogo branch={entry} size={52} />
                 <span className="min-w-0 flex-1">
                   <span className="block text-[15px] font-bold tracking-tight text-ink">{entry.name}</span>
                   <span className="block text-xs text-ink-subtle">
@@ -284,14 +291,3 @@ function errorKeyFor(reason) {
   }
 }
 
-/** A miniature of each branch's palette, so the choice is visual. */
-function BranchSwatch({ theme }) {
-  return (
-    <span
-      data-branch={theme}
-      className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-600 shadow-soft"
-    >
-      <span className="h-4 w-4 rounded-full bg-accent-500 ring-2 ring-brand-on/30" />
-    </span>
-  );
-}
