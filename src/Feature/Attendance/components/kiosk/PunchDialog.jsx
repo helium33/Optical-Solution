@@ -32,10 +32,11 @@ import { roleLabel } from '../../config/roles';
  * screen, or below the keypad, invites someone to type four digits and then
  * discover the choice they needed to make.
  *
- * There is no staff dashboard. A successful punch shows a confirmation and
- * returns to the roster by itself — a shop tablet is a shared surface, and
- * leaving a person's hours on screen for the next member of staff to read is
- * not a feature.
+ * A successful punch shows a confirmation and returns to the roster by itself.
+ * There IS now a personal screen behind a personal PIN (StaffDashboard), but
+ * the rule that shaped this one still governs it: a shop tablet is a shared
+ * surface, so nothing personal stays on it without someone having just proved
+ * who they are, and it closes itself when they walk away.
  *
  * "What it will record" is shown for BOTH directions, not just check-out:
  * clocking in previews the scheduled start and whether this is on time or
@@ -51,7 +52,22 @@ const STEP = { ENTRY: 'entry', WORKING: 'working', DONE: 'done' };
 /** How long the confirmation stays up before the kiosk resets itself. */
 const SUCCESS_MS = 2800;
 
-export default function PunchDialog({ open, onClose, staff, log, branch, geo, onSubmitted }) {
+export default function PunchDialog({
+  open,
+  onClose,
+  staff,
+  log,
+  branch,
+  geo,
+  onSubmitted,
+  /* A PIN this person has ALREADY proved, moments ago, to open their own
+     dashboard. Given one, the keypad is replaced by a single confirm button:
+     re-typing the same four digits to finish the thing you just unlocked is
+     friction that teaches people the kiosk is slow. The overtime decision and
+     the location gate are untouched — only the identity step is, because it
+     has already happened. */
+  preVerifiedPin = null,
+}) {
   const { t } = useTranslation();
   const isCheckOut = Boolean(log?.checkIn?.at) && !log?.checkOut?.at;
   const kind = isCheckOut ? PUNCH.CHECK_OUT : PUNCH.CHECK_IN;
@@ -296,6 +312,7 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
               graceMinutes={shift?.overtimeGraceMinutes}
               capMinutes={shift?.maxOvertimeMinutes}
               disabled={blocked || step === STEP.WORKING}
+              commitsWithoutPin={Boolean(preVerifiedPin)}
             />
           ) : null}
 
@@ -333,6 +350,15 @@ export default function PunchDialog({ open, onClose, staff, log, branch, geo, on
             <div className="py-10">
               <Spinner size={28} label={t('punch.recording', { action: actionLabel.toLowerCase() })} />
             </div>
+          ) : preVerifiedPin ? (
+            <button
+              type="button"
+              disabled={blocked}
+              onClick={() => send({ method: AUTH_METHOD.PIN, pin: preVerifiedPin })}
+              className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-brand-600 px-4 py-4 text-base font-bold text-brand-on shadow-soft transition-all duration-300 ease-expo hover:-translate-y-0.5 hover:shadow-lift disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none tap-none"
+            >
+              {t('punch.confirm', { action: actionLabel.toLowerCase() })}
+            </button>
           ) : (
             <>
               {webauthn.available && staff.hasBiometrics ? (

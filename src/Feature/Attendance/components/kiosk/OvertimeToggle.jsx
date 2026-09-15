@@ -29,6 +29,10 @@ export default function OvertimeToggle({
   graceMinutes = 15,
   capMinutes = null,
   disabled = false,
+  /* When identity was already proven, the commit is a confirm button rather
+     than the keypad — so the instruction has to name the step that actually
+     follows, or it points at a PIN pad that is not on screen. */
+  commitsWithoutPin = false,
 }) {
   const { t } = useTranslation();
 
@@ -81,7 +85,7 @@ export default function OvertimeToggle({
                 {t('overtime.workedPast', { duration: formatDuration(eligibleMinutes) })}
                 {!checked ? (
                   <strong className="ml-1 font-bold text-ot-ink">
-                    {t('overtime.tapBeforePin')}
+                    {t(commitsWithoutPin ? 'overtime.tapBeforeConfirm' : 'overtime.tapBeforePin')}
                   </strong>
                 ) : null}
               </>

@@ -89,12 +89,27 @@
     "onTime": "On time",
     "lateBy": "Late by {{duration}}",
     "overtimeAvailable": "Overtime available",
-    "status": "Status"
+    "status": "Status",
+    "confirm": "Confirm {{action}}"
+  },
+  "staffAuth": {
+    "title": "Enter your PIN",
+    "checking": "Checking…",
+    "ownRecordsOnly": "Your PIN opens your own records only."
+  },
+  "staffDash": {
+    "today": "Today",
+    "thisMonth": "This month",
+    "day": "Day",
+    "daysWorked": "{{count}} days worked",
+    "noRecords": "Nothing recorded this month yet",
+    "autoClose": "This screen closes itself after a minute so the next person does not see your records."
   },
   "overtime": {
     "claim": "Claim overtime",
     "title": "Overtime",
     "tapBeforePin": "Tap this before entering your PIN",
+    "tapBeforeConfirm": "Tap this before confirming",
     "workedPast": "You worked {{duration}} past the end of your shift.",
     "willBeLogged": "Will be logged as overtime",
     "paidInHours": "Paid as {{hours}}h",
@@ -143,7 +158,9 @@
     "timeout": "The server did not answer. Check the connection and try again.",
     "rulesNotDeployed": "This tablet is signed in but Firestore is refusing to send the roster — the security rules have not been deployed for the attendance collections. Run `npm run merge:rules` and publish the result.",
     "kioskSessionExpired": "This tablet's sign-in has expired. Lock the kiosk and unlock it again with the branch PIN — the roster cannot be read without an identity.",
-    "indexMissing": "The roster query needs a Firestore index that has not been created yet. Run `firebase deploy --only firestore:indexes`, or open the link in the message below — it creates exactly the right index. Indexes take a minute or two to build."
+    "indexMissing": "The roster query needs a Firestore index that has not been created yet. Run `firebase deploy --only firestore:indexes`, or open the link in the message below — it creates exactly the right index. Indexes take a minute or two to build.",
+    "noPinSet": "No PIN has been set for you yet. Ask a supervisor to set one.",
+    "pinUnreadable": "PIN sign-in is not switched on for this project yet."
   },
   "admin": {
     "title": "Attendance",

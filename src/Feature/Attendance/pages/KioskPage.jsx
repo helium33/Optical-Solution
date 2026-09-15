@@ -6,6 +6,8 @@ import { LuUsers, LuTimer, LuCircleCheck, LuTriangleAlert } from 'react-icons/lu
 import KioskShell from '../components/kiosk/KioskShell';
 import StaffCard from '../components/kiosk/StaffCard';
 import PunchDialog from '../components/kiosk/PunchDialog';
+import StaffSignInDialog from '../components/kiosk/StaffSignInDialog';
+import StaffDashboard from '../components/kiosk/StaffDashboard';
 import Spinner from '../components/ui/Spinner';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useGeoFence } from '../hooks/useGeoFence';
@@ -48,6 +50,11 @@ export default function KioskPage() {
   const [staff, setStaff] = useState(null);
   const [logs, setLogs] = useState([]);
   const [selected, setSelected] = useState(null);
+  /* Tapping a name now asks for that person's PIN first; `session` is who
+     proved it, and the PIN they proved. It is state, never storage: the whole
+     point is that it does not survive walking away from the tablet. */
+  const [signingIn, setSigningIn] = useState(null);
+  const [session, setSession] = useState(null);
   const [loadError, setLoadError] = useState(null);
   /* Firestore's own sentence for the failure, kept alongside the translated
      one. For a missing index that sentence carries the console URL that
@@ -272,7 +279,7 @@ export default function KioskPage() {
                         log={log}
                         timezone={branch.timezone}
                         elapsedMinutes={elapsed}
-                        onSelect={setSelected}
+                        onSelect={setSigningIn}
                         disabled={geo.pending}
                       />
                     </div>
@@ -284,6 +291,29 @@ export default function KioskPage() {
         </div>
       )}
 
+      <StaffSignInDialog
+        open={Boolean(signingIn)}
+        onClose={() => setSigningIn(null)}
+        staff={signingIn}
+        onVerified={(pin) => {
+          setSession({ staff: signingIn, pin });
+          setSigningIn(null);
+        }}
+      />
+
+      {session ? (
+        <StaffDashboard
+          staff={session.staff}
+          branch={branch}
+          log={logsById.get(session.staff.id) ?? null}
+          onPunch={() => setSelected(session.staff)}
+          onClose={() => {
+            setSession(null);
+            setSelected(null);
+          }}
+        />
+      ) : null}
+
       <PunchDialog
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
@@ -291,6 +321,10 @@ export default function KioskPage() {
         log={selectedLog}
         branch={branch}
         geo={geo}
+        preVerifiedPin={session && selected && session.staff.id === selected.id ? session.pin : null}
+        /* Straight back to the shared roster once the punch lands: a personal
+           screen left open on the counter is somebody's hours facing the shop. */
+        onSubmitted={() => setSession(null)}
       />
     </KioskShell>
   );

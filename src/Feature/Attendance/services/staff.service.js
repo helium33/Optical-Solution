@@ -1,19 +1,23 @@
 import {
   addDoc,
   deleteDoc,
+  doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 
-import { functions } from '../config/firebase';
-import { staffCol, staffDoc } from './paths';
+import { db, functions } from '../config/firebase';
+import { COLLECTIONS, staffCol, staffDoc } from './paths';
 import { ROLE_META } from '../config/roles';
 import { isCallableUnavailable } from '../lib/callableErrors';
+import { createPinRecord, verifyPin } from '../lib/crypto';
 
 /**
  * Staff records. The `pin` and `webauthn.credentials[].publicKey` fields are
@@ -123,14 +127,64 @@ export async function setStaffPin(staffId, pin) {
     return response.data ?? { ok: true };
   } catch (error) {
     if (ALLOW_CLIENT_FALLBACK && isCallableUnavailable(error)) {
-      console.warn(
-        '[attendance] setStaffPin is not deployed. The employee was created but has NO PIN, ' +
-          'so they cannot clock in yet. Set it with `npm run seed:pins -- --staff`.',
-      );
-      return { ok: false, reason: 'not-deployed' };
+      /* Hash it here instead. The PIN still never leaves as plaintext — what
+         is written is the same PBKDF2 record the callable would have written —
+         but the derivation happens in the browser, so the iteration count is
+         the only thing standing between the stored record and a guess. See
+         verifyStaffPin for what that is worth, and firestore.rules.development
+         for the rule that has to be loosened to allow it. */
+      await setDoc(staffPinDoc(staffId), {
+        ...(await createPinRecord(pin)),
+        updatedAt: serverTimestamp(),
+        setBy: 'client-unverified',
+      });
+      return { ok: true, dev: true };
     }
     throw error;
   }
+}
+
+const staffPinDoc = (staffId) => doc(db, COLLECTIONS.STAFF, staffId, 'secrets', 'pin');
+
+/**
+ * Check a staff member's own PIN, in the browser.
+ *
+ * This exists only because `verifyStaffPin` has no server to run on yet, and it
+ * is a weaker thing than the callable it stands in for. Two honest limits:
+ *
+ *   - The stored record has to be READABLE for this to work at all, so the
+ *     development rules serve `staff/{id}/secrets/pin` to any signed-in
+ *     session. Anyone who can open the kiosk can therefore fetch every PIN
+ *     record in the shop.
+ *   - A four-digit PIN is ten thousand guesses. What makes that cost anything
+ *     is PBKDF2 at 210 000 iterations — roughly a tenth of a second per guess,
+ *     so a full sweep of one person's PIN is tens of minutes of steady compute
+ *     rather than instant. That is a lock on a drawer, not a safe.
+ *
+ * So it is worth having — it stops a colleague reading someone else's hours
+ * over their shoulder, which is the actual risk on a shop floor — and it is
+ * not worth trusting against someone determined. Deploying the callable
+ * replaces it with a real check and lets the rule go back to denying reads.
+ *
+ * @returns {Promise<{ok: boolean, reason?: string}>}
+ */
+export async function verifyStaffPin(staffId, pin) {
+  if (!ALLOW_CLIENT_FALLBACK) return { ok: false, reason: 'not-deployed' };
+
+  let snapshot;
+  try {
+    snapshot = await getDoc(staffPinDoc(staffId));
+  } catch (error) {
+    /* Denied means the rule was never loosened — which is the SAFE state, not
+       a bug. Say so plainly rather than reporting it as a wrong PIN. */
+    if (error?.code === 'permission-denied') return { ok: false, reason: 'pin-unreadable' };
+    throw error;
+  }
+
+  if (!snapshot.exists()) return { ok: false, reason: 'no-pin-set' };
+  return (await verifyPin(pin, snapshot.data()))
+    ? { ok: true }
+    : { ok: false, reason: 'wrong-pin' };
 }
 
 /* ───────────────────────────── removal ────────────────────────────────── */

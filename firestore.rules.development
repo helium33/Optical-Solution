@@ -68,7 +68,24 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, update, delete: if isAdmin();
 
-      match /secrets/{secretId} { allow read, write: if false; }
+      // DEVELOPMENT ONLY, and the sharpest edge in this file.
+      //
+      // A staff member signing in with their own PIN needs that PIN checked,
+      // and setStaffPin/verifyStaffPin do not exist yet — so the check happens
+      // in the browser, which means the browser has to be able to READ the
+      // stored record. Every signed-in session can therefore fetch every PIN
+      // record in the shop.
+      //
+      // What that costs an attacker: the record is PBKDF2-SHA256 at 210 000
+      // iterations, so each of the 10 000 possible PINs costs about a tenth of
+      // a second. One person's PIN is tens of minutes of steady compute, not a
+      // lookup. It stops a colleague snooping; it does not stop someone patient.
+      //
+      // In firestore.rules this is `if false` and the Functions do the check.
+      match /secrets/{secretId} {
+        allow read: if signedIn();
+        allow write: if isAdmin();
+      }
       match /credentials/{credentialId} { allow read, write: if false; }
     }
 

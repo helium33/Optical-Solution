@@ -18,6 +18,11 @@
  *    themselves unavailable.
  */
 import { STAFF, BRANCH_DOCS, buildAttendance } from './fixtures';
+import { createPinRecord } from '../src/Feature/Attendance/lib/crypto';
+
+/** The personal PIN every preview employee answers to. Demo value only. */
+const PREVIEW_STAFF_PIN = '1234';
+let previewStaffPinRecord = null;
 
 /* ────────────────────────────── the store ─────────────────────────────── */
 
@@ -178,7 +183,26 @@ export const persistentLocalCache = () => ({});
 export const persistentMultipleTabManager = () => ({});
 
 export const collection = (db, name) => ({ __kind: 'collection', name, constraints: [] });
-export const doc = (db, name, id) => ({ __kind: 'doc', name, id });
+
+/**
+ * Accepts a full path, not just `(collection, id)`.
+ *
+ * A staff PIN lives at `staff/{id}/secrets/pin`, five segments deep. The old
+ * three-argument version dropped everything after the id, so that read
+ * silently returned the STAFF document instead — the preview would have shown
+ * a PIN check that could never match while the real SDK worked fine.
+ */
+export const doc = (db, ...segments) => {
+  const parts = segments.flatMap((segment) => String(segment).split('/')).filter(Boolean);
+  const id = parts.pop();
+  return { __kind: 'doc', name: parts.join('/'), id };
+};
+
+/** Subcollections are created on demand, the way Firestore creates them. */
+const mapFor = (name) => {
+  if (!collections[name]) collections[name] = new Map();
+  return collections[name];
+};
 
 export const where = (field, op, value) => ({ type: 'where', field, op, value });
 export const orderBy = (field, direction = 'asc') => ({ type: 'orderBy', field, direction });
@@ -211,7 +235,17 @@ export const onSnapshot = (ref, onNext, onError) => {
 export const getDocs = async (ref) => snapshotOf(ref.name, ref.constraints ?? []);
 
 export const getDoc = async (ref) => {
-  const data = collections[ref.name]?.get(ref.id);
+  let data = collections[ref.name]?.get(ref.id);
+
+  /* Give every preview employee the same demo PIN the chrome advertises, so
+     the personal sign-in can actually be rehearsed. Derived on first use
+     rather than at module load because it is real PBKDF2 — the preview runs
+     the same verification the shop does, at the same cost. */
+  if (!data && ref.id === 'pin' && /^staff\/.+\/secrets$/.test(ref.name)) {
+    previewStaffPinRecord ??= await createPinRecord(PREVIEW_STAFF_PIN);
+    data = previewStaffPinRecord;
+  }
+
   return {
     id: ref.id,
     exists: () => Boolean(data),
@@ -220,8 +254,7 @@ export const getDoc = async (ref) => {
 };
 
 export const setDoc = async (ref, data, options = {}) => {
-  const target = collections[ref.name];
-  if (!target) return;
+  const target = mapFor(ref.name);
   const existing = options.merge ? (target.get(ref.id) ?? {}) : {};
   target.set(ref.id, { ...existing, ...data, id: ref.id });
   notify(ref.name);
