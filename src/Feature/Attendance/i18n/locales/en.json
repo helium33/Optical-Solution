@@ -188,8 +188,11 @@
   "monthly": {
     "title": "Monthly summary",
     "subtitle": "Every employee, one month",
+    "name": "Name",
     "presentDays": "Present days",
     "absentDays": "Absent days",
+    "lateMinutes": "Late minutes",
+    "overtime": "Overtime",
     "overtimeHours": "Overtime hours",
     "lateDays": "Late days",
     "workingDays": "{{count}} working days so far",

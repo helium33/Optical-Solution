@@ -188,8 +188,11 @@
   "monthly": {
     "title": "လစဉ် အနှစ်ချုပ်",
     "subtitle": "ဝန်ထမ်းတိုင်း၊ တစ်လစာ",
+    "name": "အမည်",
     "presentDays": "လာရက်",
     "absentDays": "ပျက်ရက်",
+    "lateMinutes": "နောက်ကျမိနစ်",
+    "overtime": "အိုဗာတိုင်",
     "overtimeHours": "Overtime နာရီပေါင်း",
     "lateDays": "နောက်ကျရက်",
     "workingDays": "ယခုအထိ အလုပ်ရက် {{count}} ရက်",

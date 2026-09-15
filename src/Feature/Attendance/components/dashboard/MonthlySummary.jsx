@@ -137,10 +137,28 @@ export default function MonthlySummary({
                     {get(branchId)?.name ?? branchId}
                   </span>
                 </h3>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {people.map((person) => (
-                    <EmployeeCard key={person.staffId} person={person} />
-                  ))}
+                {/* A grid, not cards. Five figures per person compared across a
+                    whole branch is a reading task, and a column of right-aligned
+                    numerals answers "who was absent most" in one scan where a
+                    wall of cards makes it a hunt. Only the table scrolls
+                    sideways on a narrow screen; the page never does. */}
+                <div className="card overflow-x-auto">
+                  <table className="w-full min-w-[34rem] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-line">
+                        <Th align="left">{t('monthly.name')}</Th>
+                        <Th>{t('monthly.presentDays')}</Th>
+                        <Th>{t('monthly.absentDays')}</Th>
+                        <Th>{t('monthly.lateMinutes')}</Th>
+                        <Th>{t('monthly.overtime')}</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {people.map((person) => (
+                        <EmployeeRow key={person.staffId} person={person} />
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             ) : null,
@@ -158,64 +176,68 @@ export default function MonthlySummary({
   );
 }
 
-function EmployeeCard({ person }) {
+function Th({ children, align = 'right' }) {
+  return (
+    <th
+      scope="col"
+      className={`px-3 py-2.5 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-subtle ${
+        align === 'left' ? 'text-left' : 'text-right'
+      }`}
+    >
+      {children}
+    </th>
+  );
+}
+
+function EmployeeRow({ person }) {
   const { t } = useTranslation();
   const perfect = person.absentDays === 0 && person.presentDays > 0;
 
   return (
-    <article className="card card-pad">
-      <header className="mb-4 flex items-center gap-3">
-        <Avatar name={person.staffName} seed={person.staffId} size={40} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold tracking-tight text-ink">{person.staffName}</p>
-          <p className="truncate text-xs text-ink-subtle">{roleLabel(person.role, t)}</p>
+    <tr className="border-b border-line/60 last:border-0">
+      <td className="px-3 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <Avatar name={person.staffName} seed={person.staffId} size={32} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold tracking-tight text-ink">
+              {person.staffName}
+            </p>
+            <p className="truncate text-[11px] text-ink-subtle">{roleLabel(person.role, t)}</p>
+          </div>
+          {perfect ? (
+            <span className="shrink-0 rounded-full bg-ok-soft px-2 py-0.5 text-[10px] font-bold text-ok-ink">
+              {t('monthly.perfect')}
+            </span>
+          ) : null}
         </div>
-        {perfect ? (
-          <span className="shrink-0 rounded-full bg-ok-soft px-2 py-0.5 text-[10px] font-bold text-ok-ink">
-            {t('monthly.perfect')}
-          </span>
-        ) : null}
-      </header>
+      </td>
+      <Td tone="ok">{person.presentDays}</Td>
+      <Td tone={person.absentDays > 0 ? 'danger' : 'muted'}>{person.absentDays}</Td>
+      <Td tone={person.lateMinutes > 0 ? 'warn' : 'muted'}>{person.lateMinutes}</Td>
+      {/* Hours, never minutes — minutesToBilledHours has already rounded any
+          part-hour up, and showing the raw minutes here would contradict the
+          number the shop actually pays. */}
+      <Td tone={person.overtimeHours > 0 ? 'ot' : 'muted'}>
+        {person.overtimeHours > 0
+          ? `${person.overtimeHours} ${t('common.hours')}`
+          : person.overtimeHours}
+      </Td>
+    </tr>
+  );
+}
 
-      <dl className="grid grid-cols-3 gap-2">
-        <Figure
-          label={t('monthly.presentDays')}
-          value={person.presentDays}
-          tone="ok"
-        />
-        <Figure
-          label={t('monthly.absentDays')}
-          value={person.absentDays}
-          tone={person.absentDays > 0 ? 'danger' : 'muted'}
-        />
-        <Figure
-          label={t('monthly.overtimeHours')}
-          value={person.overtimeHours}
-          tone={person.overtimeHours > 0 ? 'ot' : 'muted'}
-        />
-      </dl>
-
-      {person.lateDays > 0 ? (
-        <p className="mt-3 text-[11px] font-medium text-warn-ink">
-          {t('monthly.lateDays')}: {person.lateDays} · {person.lateMinutes} {t('common.minutes')}
-        </p>
-      ) : null}
-    </article>
+function Td({ tone, children }) {
+  return (
+    <td className={`tabular px-3 py-2.5 text-right text-sm font-semibold ${TONES[tone]}`}>
+      {children}
+    </td>
   );
 }
 
 const TONES = {
   ok: 'text-ok-ink',
   danger: 'text-danger-ink',
+  warn: 'text-warn-ink',
   ot: 'text-ot-ink',
   muted: 'text-ink-subtle',
 };
-
-function Figure({ label, value, tone }) {
-  return (
-    <div className="rounded-2xl bg-surface-sunken/60 px-3 py-3 text-center">
-      <dd className={`text-2xl font-bold leading-none tracking-tight ${TONES[tone]}`}>{value}</dd>
-      <dt className="mt-1.5 text-[10px] font-semibold leading-tight text-ink-subtle">{label}</dt>
-    </div>
-  );
-}
