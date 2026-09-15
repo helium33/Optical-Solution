@@ -67,6 +67,10 @@ export default function PunchDialog({
      the location gate are untouched — only the identity step is, because it
      has already happened. */
   preVerifiedPin = null,
+  /* The overtime claim made on the sign-in keypad, before the PIN — which is
+     where the decision belongs and where it was actually taken. Carried in
+     rather than re-asked, so the toggle here opens already reflecting it. */
+  initialOvertime = false,
 }) {
   const { t } = useTranslation();
   const isCheckOut = Boolean(log?.checkIn?.at) && !log?.checkOut?.at;
@@ -77,7 +81,7 @@ export default function PunchDialog({
 
   const [step, setStep] = useState(STEP.ENTRY);
   const [pin, setPin] = useState('');
-  const [overtime, setOvertime] = useState(false);
+  const [overtime, setOvertime] = useState(initialOvertime);
   const [error, setError] = useState(null);
   /* Whether `error` means the server side of the punch could not be reached
      at all, as opposed to a rejection FROM a server that IS there (a wrong
@@ -91,11 +95,11 @@ export default function PunchDialog({
     if (!open) return;
     setStep(STEP.ENTRY);
     setPin('');
-    setOvertime(false);
+    setOvertime(initialOvertime);
     setError(null);
     setErrorUnreachable(false);
     setSubmitted(null);
-  }, [open, staff?.id]);
+  }, [open, staff?.id, initialOvertime]);
 
   const shift = log?.shiftSnapshot ?? branch?.shift;
 

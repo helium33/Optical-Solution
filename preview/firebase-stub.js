@@ -238,12 +238,18 @@ export const getDoc = async (ref) => {
   let data = collections[ref.name]?.get(ref.id);
 
   /* Give every preview employee the same demo PIN the chrome advertises, so
-     the personal sign-in can actually be rehearsed. Derived on first use
-     rather than at module load because it is real PBKDF2 — the preview runs
-     the same verification the shop does, at the same cost. */
-  if (!data && ref.id === 'pin' && /^staff\/.+\/secrets$/.test(ref.name)) {
-    previewStaffPinRecord ??= await createPinRecord(PREVIEW_STAFF_PIN);
-    data = previewStaffPinRecord;
+     the personal sign-in and the admin PIN column can both be rehearsed.
+     Mirrors the real split: `verifier` holds the PBKDF2 record the kiosk
+     checks against, `pin` holds the PIN only an admin may read. Derived on
+     first use rather than at module load because it is real PBKDF2 — the
+     preview runs the same verification the shop does, at the same cost. */
+  if (!data && /^staff\/.+\/secrets$/.test(ref.name)) {
+    if (ref.id === 'verifier') {
+      previewStaffPinRecord ??= await createPinRecord(PREVIEW_STAFF_PIN);
+      data = previewStaffPinRecord;
+    } else if (ref.id === 'pin') {
+      data = { pin: PREVIEW_STAFF_PIN };
+    }
   }
 
   return {

@@ -295,8 +295,10 @@ export default function KioskPage() {
         open={Boolean(signingIn)}
         onClose={() => setSigningIn(null)}
         staff={signingIn}
-        onVerified={(pin) => {
-          setSession({ staff: signingIn, pin });
+        log={signingIn ? (logsById.get(signingIn.id) ?? null) : null}
+        branch={branch}
+        onVerified={(pin, overtime) => {
+          setSession({ staff: signingIn, pin, overtime });
           setSigningIn(null);
         }}
       />
@@ -322,6 +324,7 @@ export default function KioskPage() {
         branch={branch}
         geo={geo}
         preVerifiedPin={session && selected && session.staff.id === selected.id ? session.pin : null}
+        initialOvertime={Boolean(session && selected && session.staff.id === selected.id && session.overtime)}
         /* Straight back to the shared roster once the punch lands: a personal
            screen left open on the counter is somebody's hours facing the shop. */
         onSubmitted={() => setSession(null)}

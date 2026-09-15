@@ -87,7 +87,7 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
         actor?.uid,
       );
 
-      const result = await setStaffPin(staffId, form.pin);
+      const result = await setStaffPin(staffId, form.pin, actor?.uid);
       if (!result.ok && result.reason === 'not-deployed') {
         /* Whether this actually blocks anyone from clocking in depends
            entirely on VITE_ALLOW_CLIENT_PUNCH. When it's on, submitPunch's
