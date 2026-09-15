@@ -1,6 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react-swc'
-import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 /**
@@ -55,8 +54,34 @@ const announceRoutes = () => ({
  * store in IndexedDB, and a service worker caching its responses on top would
  * be a second, staler answer to the same question.
  */
-const pwa = () =>
-  VitePWA({
+/**
+ * Loaded at call time rather than imported at the top, and allowed to fail.
+ *
+ * A service worker is a production concern: it does nothing during
+ * `npm run dev`, and Netlify installs from the lockfile so the build always
+ * has it. But a top-level import of a package whose own dependency tree is
+ * incomplete — a half-finished `npm install`, which happens — takes the whole
+ * config down, and with it the dev server, for a feature that was not being
+ * used at that moment. A shop cannot run its kiosk because an optional plugin
+ * did not unpack cleanly is the wrong failure.
+ *
+ * So: try to load it, say plainly what to do if it is not there, carry on.
+ */
+const pwa = async () => {
+  let VitePWA;
+  try {
+    ({ VitePWA } = await import('vite-plugin-pwa'));
+  } catch (error) {
+    console.warn(
+      '\n  [pwa] vite-plugin-pwa could not be loaded, so the app will run WITHOUT ' +
+        'offline support and cannot be installed to a home screen.\n' +
+        '        Everything else works. To fix it: npm install\n' +
+        `        (${error?.message ?? error})\n`,
+    );
+    return [];
+  }
+
+  return VitePWA({
     registerType: 'autoUpdate',
     includeAssets: ['apple-touch-icon.png', 'logo.svg'],
     manifest: {
@@ -95,9 +120,10 @@ const pwa = () =>
       ],
     },
   });
+};
 
-export default defineConfig({
-  plugins: [react(), announceRoutes(), pwa()],
+export default defineConfig(async () => ({
+  plugins: [react(), announceRoutes(), await pwa()],
   optimizeDeps: {
     /**
      * Scan only the real entry point.
@@ -111,4 +137,4 @@ export default defineConfig({
      */
     entries: ['index.html'],
   },
-})
+}))
