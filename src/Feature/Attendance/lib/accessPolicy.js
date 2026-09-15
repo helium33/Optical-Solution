@@ -68,6 +68,13 @@ export const INTENT = {
  * @param geoError   human-readable geolocation failure, if any
  * @param devMode    when true, every location check is skipped
  * @param intent     one of INTENT
+ *
+ * Every verdict carries an English `title`/`detail` **and** a `titleKey` /
+ * `detailKey` with the parameters they interpolate. The English pair keeps this
+ * module usable from tests and non-React callers; the keys let the UI re-render
+ * the same verdict in the reader's language without this module importing
+ * i18next — a pure function that reaches for a global translator is neither
+ * pure nor testable.
  */
 export function evaluateAccess({
   fence,
@@ -88,6 +95,9 @@ export function evaluateAccess({
       reason: null,
       title: 'Location checks bypassed',
       detail: 'Developer mode is on. Geofencing and the network check are disabled.',
+      titleKey: 'location.devBypass',
+      detailKey: 'location.devBypassDetail',
+      params: {},
       warnings: [WARNING.DEV_MODE_BYPASS],
       bypassed: true,
     };
@@ -98,21 +108,43 @@ export function evaluateAccess({
       title: 'Location is blocked',
       detail:
         'Attendance can only be logged at the shop, so the browser needs location access. Enable it in the site settings, then try again.',
+      titleKey: 'location.blocked',
+      detailKey: 'location.blockedDetail',
     });
   }
 
   if (geoError) {
-    return blocked(BLOCK_REASON.GEO_UNAVAILABLE, { title: 'Cannot read location', detail: geoError });
+    /* `geoError` is the browser's own sentence and is not translatable — it is
+       passed through as the detail rather than dropped, because it is often the
+       only clue to what the device is actually refusing. */
+    return blocked(BLOCK_REASON.GEO_UNAVAILABLE, {
+      title: 'Cannot read location',
+      detail: geoError,
+      titleKey: 'location.cannotRead',
+      detailKey: null,
+    });
   }
 
   if (!fence || fence.verdict === FENCE.UNKNOWN) {
-    return { access: ACCESS.PENDING, reason: null, title: 'Finding you…', detail: null, warnings: [] };
+    return {
+      access: ACCESS.PENDING,
+      reason: null,
+      title: 'Finding you…',
+      detail: null,
+      titleKey: 'location.finding',
+      detailKey: null,
+      params: {},
+      warnings: [],
+    };
   }
 
   if (fence.verdict === FENCE.IMPRECISE) {
     return blocked(BLOCK_REASON.IMPRECISE_FIX, {
       title: 'Signal is too weak to confirm',
       detail: `The location is only accurate to about ${Math.round(fence.accuracy)} m, and we need ${fence.requiredAccuracy} m or better. Step closer to a window or door and wait a moment.`,
+      titleKey: 'location.imprecise',
+      detailKey: 'location.impreciseDetail',
+      params: { accuracy: Math.round(fence.accuracy), required: fence.requiredAccuracy },
     });
   }
 
@@ -120,6 +152,13 @@ export function evaluateAccess({
     return blocked(BLOCK_REASON.OUT_OF_RANGE, {
       title: `Too far from ${branchName}`,
       detail: `You need to be within ${fence.radius} m. You are about ${Math.round(fence.overshootMeters)} m outside that.`,
+      titleKey: 'location.tooFar',
+      detailKey: 'location.tooFarDetail',
+      params: {
+        branch: branchName,
+        radius: fence.radius,
+        over: Math.round(fence.overshootMeters),
+      },
     });
   }
 
@@ -135,6 +174,9 @@ export function evaluateAccess({
       reason: null,
       title: `At ${branchName}`,
       detail: null,
+      titleKey: 'location.at',
+      detailKey: null,
+      params: { branch: branchName },
       warnings: [...warnings, WARNING.OVERTIME_NETWORK_EXEMPT],
     };
   }
@@ -147,6 +189,8 @@ export function evaluateAccess({
         title: 'Not on the shop Wi-Fi',
         detail:
           'You appear to be at the shop but on a different network. Connect to the shop Wi-Fi and try again.',
+        titleKey: 'location.wrongNetwork',
+        detailKey: 'location.wrongNetworkDetail',
       });
     }
     warnings.push(WARNING.NETWORK_MISMATCH_ADVISORY);
@@ -157,12 +201,24 @@ export function evaluateAccess({
     warnings.push(WARNING.NETWORK_UNVERIFIED);
   }
 
-  return { access: ACCESS.ALLOWED, reason: null, title: `At ${branchName}`, detail: null, warnings };
+  return {
+    access: ACCESS.ALLOWED,
+    reason: null,
+    title: `At ${branchName}`,
+    detail: null,
+    titleKey: 'location.at',
+    detailKey: null,
+    params: { branch: branchName },
+    warnings,
+  };
 }
 
-const blocked = (reason, { title, detail }) => ({
+const blocked = (reason, { title, detail, titleKey = null, detailKey = null, params = {} }) => ({
   access: ACCESS.BLOCKED,
   reason,
+  titleKey,
+  detailKey,
+  params,
   title,
   detail,
   warnings: [],

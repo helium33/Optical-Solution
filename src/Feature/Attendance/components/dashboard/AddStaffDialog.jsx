@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { LuUserPlus, LuTriangleAlert, LuCircleCheck } from 'react-icons/lu';
 
 import Modal from '../ui/Modal';
@@ -31,6 +32,10 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  /* Tracked separately from the message so the UI can offer a targeted next
+     step for a permission failure specifically, rather than a link that would
+     be equally wrong for "the PIN service isn't deployed" or "you're offline". */
+  const [errorCode, setErrorCode] = useState(null);
   const [pinWarning, setPinWarning] = useState(null);
 
   useEffect(() => {
@@ -82,13 +87,25 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
         actor?.uid,
       );
 
-      const result = await setStaffPin(staffId, form.pin);
+      const result = await setStaffPin(staffId, form.pin, actor?.uid);
       if (!result.ok && result.reason === 'not-deployed') {
-        /* The person exists but cannot clock in yet — say so rather than
-           letting them find out at 9am tomorrow. */
+        /* Whether this actually blocks anyone from clocking in depends
+           entirely on VITE_ALLOW_CLIENT_PUNCH. When it's on, submitPunch's
+           own client-side fallback never checks the PIN at all — any 4
+           digits work — so the PIN this person just typed already works,
+           right now, at the kiosk; the seed:pins/Admin-SDK step only matters
+           once the real server exists and starts checking it for real. The
+           OLD wording here ("cannot clock in yet") was true only in that
+           later, not-yet-reached state, and sent someone straight to a
+           service-account download for a problem they did not have. */
         setPinWarning(
-          `${form.name.trim()} was added, but the PIN could not be set because the server ` +
-            'function is not deployed. Set it with: npm run seed:pins -- --staff',
+          import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true'
+            ? `${form.name.trim()} was added and can already clock in and out at the kiosk with ` +
+                'any 4-digit PIN — that check is not switched on yet while the system is being ' +
+                `set up. Once it is, run this once to give ${form.name.trim()} a fixed PIN: ` +
+                'npm run seed:pins -- --staff'
+            : `${form.name.trim()} was added, but the PIN could not be set because the server ` +
+                'function is not deployed. Set it with: npm run seed:pins -- --staff',
         );
         onAdded?.(staffId);
         setBusy(false);
@@ -98,7 +115,18 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
       onAdded?.(staffId);
       onClose?.();
     } catch (submitError) {
-      setError(submitError?.message ?? 'Could not add that employee.');
+      /* "Missing or insufficient permissions" is Firebase's sentence and it
+         names nothing an operator can act on. On this form it has one cause
+         worth naming: the attendance rules have not been published, so the
+         staff write (or the PIN write next to it) is refused. */
+      setError(
+        submitError?.code === 'permission-denied'
+          ? 'Firestore refused the write. The attendance security rules have not been ' +
+              'published yet: run `npm run merge:rules`, paste firestore.rules.merged into ' +
+              'Firebase Console → Firestore → Rules, and click Publish.'
+          : (submitError?.message ?? 'Could not add that employee.'),
+      );
+      setErrorCode(submitError?.code ?? null);
     } finally {
       setBusy(false);
     }
@@ -223,9 +251,17 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
         </fieldset>
 
         {error ? (
-          <p className="rounded-2xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger-ink" role="alert">
-            {error}
-          </p>
+          <div className="rounded-2xl bg-danger-soft px-4 py-3" role="alert">
+            <p className="text-sm font-medium text-danger-ink">{error}</p>
+            {errorCode === 'permission-denied' ? (
+              <Link
+                to="/attendance/diagnostics"
+                className="mt-1.5 inline-block text-xs font-bold text-danger-ink underline underline-offset-2"
+              >
+                Find out why →
+              </Link>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="flex gap-3 pt-1">

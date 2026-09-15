@@ -12,9 +12,17 @@ dist
 dist-ssr
 *.local
 
-# Editor directories and files
+# Editor directories and files.
+#
+# .vscode/* is ignored so personal preferences stay personal, but these three
+# are project configuration rather than taste: without settings.json Tailwind
+# IntelliSense cannot see this codebase's className conditionals, the CSS
+# language server flags every @tailwind as an error, and my.json renders as
+# boxes. Shared, so nobody has to rediscover them.
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
 .idea
 .DS_Store
 *.suo
@@ -26,6 +34,14 @@ dist-ssr
 # local environment
 .env
 .env.local
+
+# Your Firebase project's live security rules, and the merge of them with this
+# app's. Both are project configuration rather than source: firestore.rules.existing
+# is copied out of your Firebase console, and .merged is generated from it by
+# `npm run merge:rules`. Committing either to a public repository would publish
+# the exact shape of your access control.
+firestore.rules.existing
+firestore.rules.merged
 
 # preview build output
 dist-preview

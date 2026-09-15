@@ -1,18 +1,24 @@
 import {
   addDoc,
   deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 
-import { functions } from '../config/firebase';
-import { staffCol, staffDoc } from './paths';
+import { db, functions } from '../config/firebase';
+import { COLLECTIONS, staffCol, staffDoc } from './paths';
 import { ROLE_META } from '../config/roles';
+import { isCallableUnavailable } from '../lib/callableErrors';
+import { createPinRecord, verifyPin } from '../lib/crypto';
 
 /**
  * Staff records. The `pin` and `webauthn.credentials[].publicKey` fields are
@@ -83,6 +89,14 @@ export function subscribeAllStaff(onChange, onError) {
   );
 }
 
+/** One read of a branch's active roster, rank-ordered. */
+export async function fetchBranchStaff(branchId) {
+  const snapshot = await getDocs(
+    query(staffCol(), where('branchId', '==', branchId), where('active', '==', true)),
+  );
+  return snapshot.docs.map(shape).sort(byRoleThenName);
+}
+
 export async function createStaff({ branchId, name, role, employeeCode, phone = null }, actorUid) {
   const created = await addDoc(staffCol(), {
     branchId,
@@ -116,20 +130,111 @@ const ALLOW_CLIENT_FALLBACK = import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true'
  * The PIN is also never stored in component state longer than the form that
  * collected it, and never logged.
  */
-export async function setStaffPin(staffId, pin) {
+export async function setStaffPin(staffId, pin, actorUid = null) {
   try {
     const response = await callSetStaffPin({ staffId, pin });
     return response.data ?? { ok: true };
   } catch (error) {
-    if (ALLOW_CLIENT_FALLBACK && error?.code === 'functions/not-found') {
-      console.warn(
-        '[attendance] setStaffPin is not deployed. The employee was created but has NO PIN, ' +
-          'so they cannot clock in yet. Set it with `npm run seed:pins -- --staff`.',
-      );
-      return { ok: false, reason: 'not-deployed' };
+    if (ALLOW_CLIENT_FALLBACK && isCallableUnavailable(error)) {
+      /* Two documents, because Firestore rules are per-document and these are
+         two different permissions. See the comment on staffPinDoc. */
+      await Promise.all([
+        setDoc(staffPinDoc(staffId), {
+          pin: String(pin),
+          updatedAt: serverTimestamp(),
+          updatedBy: actorUid,
+        }),
+        setDoc(staffVerifierDoc(staffId), {
+          ...(await createPinRecord(pin)),
+          updatedAt: serverTimestamp(),
+          setBy: 'client-unverified',
+        }),
+      ]);
+      return { ok: true, dev: true };
     }
     throw error;
   }
+}
+
+/**
+ * A PIN is stored twice, in two documents, on purpose.
+ *
+ * Two different people need two different things from it, and Firestore rules
+ * are all-or-nothing per document — there is no way to serve one document
+ * while withholding a field on it. So the question "who may READ the PIN" and
+ * the question "who may CHECK the PIN" get a document each:
+ *
+ *   secrets/pin       the PIN itself, admin-only. This is what makes the
+ *                     admin table able to show and edit a real PIN.
+ *   secrets/verifier  a PBKDF2 record and nothing else, readable by any
+ *                     signed-in session so the kiosk can check a PIN it is
+ *                     given — without being able to learn one it was not.
+ *
+ * Collapsing these into one document, or storing the PIN as a plain field on
+ * the staff record, would put every employee's PIN inside the roster the kiosk
+ * already reads: any member of staff could open the shop tablet's devtools,
+ * read a colleague's PIN, and clock in as them. On a system that decides pay
+ * that is not a privacy nit, it is a way to steal hours.
+ */
+const staffPinDoc = (staffId) => doc(db, COLLECTIONS.STAFF, staffId, 'secrets', 'pin');
+const staffVerifierDoc = (staffId) => doc(db, COLLECTIONS.STAFF, staffId, 'secrets', 'verifier');
+
+/**
+ * Read back one person's PIN. Admin only — the rule on `secrets/pin` is what
+ * enforces that, not this function.
+ *
+ * @returns {Promise<{ok: boolean, pin?: string, reason?: string}>}
+ */
+export async function fetchStaffPin(staffId) {
+  try {
+    const snapshot = await getDoc(staffPinDoc(staffId));
+    if (!snapshot.exists()) return { ok: false, reason: 'no-pin-set' };
+    return { ok: true, pin: snapshot.data().pin ?? null };
+  } catch (error) {
+    if (error?.code === 'permission-denied') return { ok: false, reason: 'denied' };
+    throw error;
+  }
+}
+
+/**
+ * Check a staff member's own PIN, in the browser.
+ *
+ * This exists only because the callable has no server to run on yet, and it is
+ * a weaker thing than the callable it stands in for. Two honest limits:
+ *
+ *   - Something has to be READABLE for the browser to check anything, so the
+ *     development rules serve `staff/{id}/secrets/verifier` to any signed-in
+ *     session. That document holds a PBKDF2 record and nothing else — no PIN
+ *     leaves the admin-only document next to it.
+ *   - A four-digit PIN is ten thousand guesses. What makes that cost anything
+ *     is PBKDF2 at 210 000 iterations — roughly a tenth of a second per guess,
+ *     so a full sweep of one person's PIN is tens of minutes of steady compute
+ *     rather than instant. That is a lock on a drawer, not a safe.
+ *
+ * So it is worth having — it stops a colleague reading someone else's hours
+ * over their shoulder, which is the actual risk on a shop floor — and it is
+ * not worth trusting against someone determined. Deploying the callable
+ * replaces it with a real check and lets the rule go back to denying reads.
+ *
+ * @returns {Promise<{ok: boolean, reason?: string}>}
+ */
+export async function verifyStaffPin(staffId, pin) {
+  if (!ALLOW_CLIENT_FALLBACK) return { ok: false, reason: 'not-deployed' };
+
+  let snapshot;
+  try {
+    snapshot = await getDoc(staffVerifierDoc(staffId));
+  } catch (error) {
+    /* Denied means the rule was never loosened — which is the SAFE state, not
+       a bug. Say so plainly rather than reporting it as a wrong PIN. */
+    if (error?.code === 'permission-denied') return { ok: false, reason: 'pin-unreadable' };
+    throw error;
+  }
+
+  if (!snapshot.exists()) return { ok: false, reason: 'no-pin-set' };
+  return (await verifyPin(pin, snapshot.data()))
+    ? { ok: true }
+    : { ok: false, reason: 'wrong-pin' };
 }
 
 /* ───────────────────────────── removal ────────────────────────────────── */
@@ -180,6 +285,25 @@ export async function deleteStaffPermanently(staffId) {
 export async function setStaffRole(staffId, role, actorUid) {
   await updateDoc(staffDoc(staffId), {
     role,
+    updatedAt: serverTimestamp(),
+    updatedBy: actorUid,
+  });
+}
+
+/**
+ * Edit the details an administrator can change from the employee table.
+ *
+ * Only the four fields the form offers are written, rather than spreading
+ * whatever the caller passes: a staff document also carries the
+ * attendance-facing fields (active, joinedAt, webauthnCredentialCount) and an
+ * edit form has no business touching those by accident.
+ */
+export async function updateStaffDetails(staffId, { name, role, branchId, employeeCode }, actorUid) {
+  await updateDoc(staffDoc(staffId), {
+    name,
+    role,
+    branchId,
+    employeeCode: employeeCode || null,
     updatedAt: serverTimestamp(),
     updatedBy: actorUid,
   });

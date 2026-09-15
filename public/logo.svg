@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 160" role="img" aria-label="Optical Solution">
+  <defs>
+    <!-- A ring around a disc, sliced by one diagonal band. The two lenses take
+         opposite diagonals so the pair reads as a mirrored set rather than the
+         same mark printed twice. -->
+    <mask id="sliceLeft">
+      <rect width="320" height="160" fill="#fff"/>
+      <rect x="10" y="71" width="140" height="18" transform="rotate(-45 80 80)" fill="#000"/>
+    </mask>
+    <mask id="sliceRight">
+      <rect width="320" height="160" fill="#fff"/>
+      <rect x="170" y="71" width="140" height="18" transform="rotate(45 240 80)" fill="#000"/>
+    </mask>
+  </defs>
+
+  <g mask="url(#sliceLeft)">
+    <circle cx="80" cy="80" r="50" fill="none" stroke="#2f3037" stroke-width="18"/>
+    <circle cx="80" cy="80" r="33" fill="#2f3037"/>
+  </g>
+
+  <g mask="url(#sliceRight)">
+    <circle cx="240" cy="80" r="50" fill="none" stroke="#2f3037" stroke-width="18"/>
+    <circle cx="240" cy="80" r="33" fill="#2f3037"/>
+  </g>
+</svg>

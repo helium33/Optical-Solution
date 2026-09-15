@@ -38,7 +38,7 @@ export const DEFAULT_MAX_ACCURACY_METERS = 65;
 export const BRANCHES = {
   win: {
     id: 'win',
-    name: 'Win Optical',
+    name: 'Win Vision',
     shortName: 'Win',
     theme: 'win',
     city: 'Mandalay',
@@ -72,7 +72,7 @@ export const BRANCHES = {
 
   pwint: {
     id: 'pwint',
-    name: 'Pwint Optical',
+    name: 'Pwint Eyewear',
     shortName: 'Pwint',
     theme: 'pwint',
     city: 'Mandalay',
@@ -97,7 +97,7 @@ export const BRANCHES = {
 
   yangon: {
     id: 'yangon',
-    name: 'Yangon Optical',
+    name: 'Yangon Eyewear',
     shortName: 'Yangon',
     theme: 'yangon',
     city: 'Yangon',

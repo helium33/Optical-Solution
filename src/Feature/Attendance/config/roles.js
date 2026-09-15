@@ -95,4 +95,12 @@ export const ROLE_PERMISSIONS = {
 
 export const isStaffRole = (role) => STAFF_ROLE_ORDER.includes(role);
 
-export const roleLabel = (role) => ROLE_META[role]?.label ?? 'Unknown';
+/**
+ * @param role one of ROLES
+ * @param t    optional i18next `t`. Passing it translates the label; omitting
+ *             it returns the English one, so non-React callers (CSV export,
+ *             scripts) keep working without dragging i18n in.
+ */
+export const roleLabel = (role, t) =>
+  t ? t(`roles.${role}`, { defaultValue: ROLE_META[role]?.label ?? 'Unknown' })
+    : (ROLE_META[role]?.label ?? 'Unknown');

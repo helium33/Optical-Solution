@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { LuUsers, LuTimer, LuCircleCheck, LuTriangleAlert } from 'react-icons/lu';
 
 import KioskShell from '../components/kiosk/KioskShell';
 import StaffCard from '../components/kiosk/StaffCard';
 import PunchDialog from '../components/kiosk/PunchDialog';
+import StaffSignInDialog from '../components/kiosk/StaffSignInDialog';
+import StaffDashboard from '../components/kiosk/StaffDashboard';
 import Spinner from '../components/ui/Spinner';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useGeoFence } from '../hooks/useGeoFence';
 import { useNow } from '../hooks/useNow';
 import { useBranch } from '../config/BranchesProvider';
+import { useFirebaseUser } from '../hooks/useFirebaseUser';
 import { subscribeBranchStaff } from '../services/staff.service';
+import { STAFF_ROLE_ORDER, roleLabel } from '../config/roles';
 import { subscribeDayBoard } from '../services/attendance.service';
 import { readKioskSession, closeKioskSession, touchKioskSession } from '../services/kioskSession';
 import { lockKiosk } from '../services/verification.service';
@@ -24,6 +29,7 @@ import { businessDayKey, minutesBetween, ATTENDANCE_STATUS } from '../lib/time';
  * state immediately and nobody double-punches.
  */
 export default function KioskPage() {
+  const { t } = useTranslation();
   const { branchId } = useParams();
   const navigate = useNavigate();
   const { setBranch } = useBranchTheme();
@@ -31,6 +37,10 @@ export default function KioskPage() {
   /* Live config: an owner changing the shift end must reach this tablet
      without a redeploy. */
   const branch = useBranch(branchId);
+  /* Every read below requires an identity. Holding the subscriptions until
+     Firebase has restored one is what stops a reload from burning them on an
+     unauthenticated request that rules refuse permanently. */
+  const { ready: authReady, uid } = useFirebaseUser();
   const now = useNow(30_000);
   const dayKey = useMemo(
     () => (branch ? businessDayKey(now, branch.timezone) : null),
@@ -40,7 +50,37 @@ export default function KioskPage() {
   const [staff, setStaff] = useState(null);
   const [logs, setLogs] = useState([]);
   const [selected, setSelected] = useState(null);
+  /* Tapping a name now asks for that person's PIN first; `session` is who
+     proved it, and the PIN they proved. It is state, never storage: the whole
+     point is that it does not survive walking away from the tablet. */
+  const [signingIn, setSigningIn] = useState(null);
+  const [session, setSession] = useState(null);
   const [loadError, setLoadError] = useState(null);
+
+  /**
+   * Arrived by typing a personal PIN at the unlock keypad rather than the
+   * branch one: open that person's screen straight away instead of showing
+   * them the shared roster they never asked for.
+   *
+   * Consumed once and then cleared from history, so a reload or a back button
+   * does not re-open somebody's records on a tablet they have walked away
+   * from.
+   */
+  const location = useLocation();
+  /* Captured once, on the first render, because the history entry is wiped
+     immediately afterwards and the roster it needs has not loaded yet. */
+  const [pendingSignIn, setPendingSignIn] = useState(() =>
+    location.state?.staffId ? location.state : null,
+  );
+  useEffect(() => {
+    if (!pendingSignIn) return;
+    navigate(`/attendance/kiosk/${branchId}`, { replace: true, state: null });
+  }, [pendingSignIn, branchId, navigate]);
+  /* Firestore's own sentence for the failure, kept alongside the translated
+     one. For a missing index that sentence carries the console URL that
+     creates it, which is the entire fix — paraphrasing it away leaves the
+     reader with a problem and no link. */
+  const [loadErrorDetail, setLoadErrorDetail] = useState(null);
 
   const geo = useGeoFence(branch, { enabled: Boolean(branch) });
 
@@ -66,22 +106,97 @@ export default function KioskPage() {
   /* ---- live data ---- */
   useEffect(() => {
     if (!branchId) return undefined;
+    if (!authReady) return undefined;
+    if (!uid) {
+      /* Auth has settled and there is nobody. The stored kiosk session has
+         outlived the Firebase one, so the fix is to unlock again — not to go
+         looking at security rules, which is where the old message sent them. */
+      setStaff([]);
+      setLoadError('errors.kioskSessionExpired');
+      setLoadErrorDetail(null);
+      return undefined;
+    }
     return subscribeBranchStaff(branchId, setStaff, (error) => {
       setStaff([]);
-      setLoadError(error?.message ?? 'Could not load the roster.');
+      /* A key, not the sentence, so it re-renders in whichever language the
+         reader picks next. "Missing or insufficient permissions" is Firebase's
+         own wording and says nothing about the cause: the tablet IS signed in,
+         the rules simply were never deployed for these collections.
+
+         The roster query filters on branchId and active and orders by name,
+         which Firestore cannot serve without the composite index declared in
+         firestore.indexes.json. Until that is deployed it answers
+         `failed-precondition`, and treating anything-but-permission-denied as
+         "no error" rendered a real, fixable failure as the benign "nobody has
+         been added yet" hint — advice for a problem the reader does not have. */
+      setLoadError(
+        error?.code === 'permission-denied'
+          ? 'errors.rulesNotDeployed'
+          : error?.code === 'failed-precondition'
+            ? 'errors.indexMissing'
+            : null,
+      );
+      setLoadErrorDetail(error?.code ? `${error.code}: ${error.message ?? ''}` : null);
     });
-  }, [branchId]);
+    /* `uid` is a dependency rather than a guard alone: when the session lands a
+       moment after mount this effect re-runs and subscribes again, which is the
+       whole recovery. */
+  }, [branchId, authReady, uid]);
 
   useEffect(() => {
-    if (!branchId || !dayKey) return undefined;
+    if (!branchId || !dayKey || !uid) return undefined;
     return subscribeDayBoard(branchId, dayKey, setLogs, () => setLogs([]));
-  }, [branchId, dayKey]);
+  }, [branchId, dayKey, uid]);
+
+  /* The roster is what turns the id the gate handed over into the person the
+     dashboard renders, so this waits for it rather than firing on mount. */
+  useEffect(() => {
+    if (!pendingSignIn || !staff?.length) return;
+    const person = staff.find((entry) => entry.id === pendingSignIn.staffId);
+    if (person) {
+      setSession({
+        staff: person,
+        pin: pendingSignIn.pin,
+        overtime: pendingSignIn.overtime,
+        /* They never asked for the shared roster — they typed their own PIN at
+           a locked tablet. Closing their screen has to lock it again rather
+           than leave them, and whoever walks up next, on everyone's records. */
+        fromGate: true,
+      });
+    }
+    setPendingSignIn(null);
+  }, [pendingSignIn, staff]);
+
+  /* Ends a personal session. Someone who reached it by typing their own PIN
+     at a locked tablet is put back at the lock screen, not handed the shared
+     roster they never unlocked. */
+  const endStaffSession = useCallback(() => {
+    const cameFromGate = session?.fromGate;
+    setSession(null);
+    setSelected(null);
+    if (cameFromGate) {
+      closeKioskSession();
+      lockKiosk();
+      navigate('/attendance/kiosk', { replace: true });
+    }
+  }, [session, navigate]);
 
   const logsById = useMemo(() => {
     const map = new Map();
     for (const log of logs) map.set(log.staffId, log);
     return map;
   }, [logs]);
+
+  /* Highest rank first, same order the admin Team view uses. `staff` is
+     already role-then-name sorted, so this only partitions it into visible
+     groups rather than re-sorting. */
+  const roleTiers = useMemo(() => {
+    const roster = staff ?? [];
+    return [...STAFF_ROLE_ORDER]
+      .reverse()
+      .map((role) => ({ role, people: roster.filter((person) => person.role === role) }))
+      .filter((tier) => tier.people.length > 0);
+  }, [staff]);
 
   const summary = useMemo(() => {
     const roster = staff ?? [];
@@ -124,13 +239,13 @@ export default function KioskPage() {
     return (
       <div className="grid min-h-dvh place-items-center bg-surface px-6 text-center">
         <div>
-          <p className="text-lg font-bold text-ink">Unknown branch</p>
+          <p className="text-lg font-bold text-ink">{t('kiosk.unknownBranch')}</p>
           <button
             type="button"
             onClick={() => navigate('/attendance/kiosk')}
             className="mt-4 rounded-2xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-brand-on"
           >
-            Choose a shop
+            {t('kiosk.chooseAnother')}
           </button>
         </div>
       </div>
@@ -143,55 +258,113 @@ export default function KioskPage() {
     <KioskShell branch={branch} geo={geo} onLock={lock}>
       {/* ---- at-a-glance strip ---- */}
       <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Tile icon={LuUsers} label="On the roster" value={summary.headcount} />
-        <Tile icon={LuCircleCheck} label="On shift now" value={summary.onShift} tone="ok" />
-        <Tile icon={LuTriangleAlert} label="Late today" value={summary.late} tone={summary.late ? 'warn' : null} />
+        <Tile icon={LuUsers} label={t('kiosk.onRoster')} value={summary.headcount} />
+        <Tile icon={LuCircleCheck} label={t('kiosk.onShiftNow')} value={summary.onShift} tone="ok" />
+        <Tile icon={LuTriangleAlert} label={t('kiosk.lateToday')} value={summary.late} tone={summary.late ? 'warn' : null} />
         <Tile
           icon={LuTimer}
-          label="Overtime today"
+          label={t('kiosk.overtimeToday')}
           value={summary.overtimeMinutes ? `${Math.round((summary.overtimeMinutes / 60) * 10) / 10}h` : '0h'}
           tone={summary.overtimeMinutes ? 'ot' : null}
         />
       </section>
 
       <h2 className="mb-3 px-1 text-sm font-bold tracking-tight text-ink">
-        Tap your name to clock {summary.onShift ? 'in or out' : 'in'}
+        {summary.onShift ? t('kiosk.tapYourName') : t('kiosk.tapYourNameIn')}
       </h2>
 
       {staff === null ? (
         <div className="py-20">
-          <Spinner size={26} label="Loading the roster…" />
+          <Spinner size={26} label={t('kiosk.loadingRoster')} />
         </div>
       ) : staff.length === 0 ? (
         <div className="card card-pad text-center">
-          <p className="text-sm font-semibold text-ink">No staff on this branch yet</p>
-          <p className="mt-1 text-xs text-ink-muted">
-            {loadError ?? 'An administrator can add people from the admin dashboard.'}
+          <p className="text-sm font-semibold text-ink">{t('kiosk.noStaff')}</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+            {t(loadError ?? 'kiosk.noStaffHint')}
           </p>
+          {loadError && loadErrorDetail ? (
+            <p className="mx-auto mt-2 max-w-prose break-words text-[11px] leading-relaxed text-ink-subtle">
+              {loadErrorDetail}
+            </p>
+          ) : null}
+          {loadError ? (
+            <Link
+              to="/attendance/diagnostics"
+              className="mt-3 inline-block text-xs font-bold text-brand-ink hover:underline"
+            >
+              {t('kiosk.runDiagnostics')}
+            </Link>
+          ) : null}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {staff.map((person, index) => {
-            const log = logsById.get(person.id) ?? null;
-            const elapsed =
-              log?.checkIn?.at && !log?.checkOut?.at
-                ? minutesBetween(log.checkIn.at, now)
-                : null;
-            return (
-              <div key={person.id} style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }} className="animate-fade-up">
-                <StaffCard
-                  staff={person}
-                  log={log}
-                  timezone={branch.timezone}
-                  elapsedMinutes={elapsed}
-                  onSelect={setSelected}
-                  disabled={geo.pending}
-                />
+        /* Grouped by seniority the moment the roster loads, highest rank
+           first — the same tiers and order the admin Team view uses, so a
+           person's place in the hierarchy reads the same everywhere. `staff`
+           already arrives sorted role-then-name; this only adds the visible
+           section headers on top of an order that was already there. */
+        <div className="space-y-6">
+          {roleTiers.map(({ role, people }) => (
+            <section key={role}>
+              <p className="mb-2.5 flex items-center gap-2 px-1">
+                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink-subtle">
+                  {roleLabel(role, t)}
+                </span>
+                <span className="rounded-full bg-surface-sunken px-1.5 py-0.5 text-[10px] font-bold text-ink-subtle tabular">
+                  {people.length}
+                </span>
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {people.map((person, index) => {
+                  const log = logsById.get(person.id) ?? null;
+                  const elapsed =
+                    log?.checkIn?.at && !log?.checkOut?.at
+                      ? minutesBetween(log.checkIn.at, now)
+                      : null;
+                  return (
+                    <div
+                      key={person.id}
+                      style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+                      className="animate-fade-up"
+                    >
+                      <StaffCard
+                        staff={person}
+                        log={log}
+                        timezone={branch.timezone}
+                        elapsedMinutes={elapsed}
+                        onSelect={setSigningIn}
+                        disabled={geo.pending}
+                      />
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </section>
+          ))}
         </div>
       )}
+
+      <StaffSignInDialog
+        open={Boolean(signingIn)}
+        onClose={() => setSigningIn(null)}
+        staff={signingIn}
+        log={signingIn ? (logsById.get(signingIn.id) ?? null) : null}
+        branch={branch}
+        onVerified={(pin, overtime) => {
+          setSession({ staff: signingIn, pin, overtime });
+          setSigningIn(null);
+        }}
+      />
+
+      {session ? (
+        <StaffDashboard
+          staff={session.staff}
+          branch={branch}
+          log={logsById.get(session.staff.id) ?? null}
+          onPunch={() => setSelected(session.staff)}
+          onClose={endStaffSession}
+        />
+      ) : null}
 
       <PunchDialog
         open={Boolean(selected)}
@@ -200,6 +373,11 @@ export default function KioskPage() {
         log={selectedLog}
         branch={branch}
         geo={geo}
+        preVerifiedPin={session && selected && session.staff.id === selected.id ? session.pin : null}
+        initialOvertime={Boolean(session && selected && session.staff.id === selected.id && session.overtime)}
+        /* Straight back to the shared roster once the punch lands: a personal
+           screen left open on the counter is somebody's hours facing the shop. */
+        onSubmitted={endStaffSession}
       />
     </KioskShell>
   );

@@ -89,7 +89,17 @@ export default {
       },
 
       fontFamily: {
-        sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
+        /* Noto Sans Myanmar sits in the same stack rather than behind a
+           language class: a screen mixes both scripts constantly — an English
+           label above a Burmese name — and the browser picks per glyph. */
+        sans: [
+          '"Plus Jakarta Sans"',
+          '"Noto Sans Myanmar"',
+          'system-ui',
+          '-apple-system',
+          '"Segoe UI"',
+          'sans-serif',
+        ],
       },
 
       borderRadius: { '4xl': '1.75rem', '5xl': '2.25rem' },

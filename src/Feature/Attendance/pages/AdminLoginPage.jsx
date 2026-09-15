@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { LuGlasses, LuShieldCheck, LuTriangleAlert, LuArrowRight } from 'react-icons/lu';
 
 import Spinner from '../components/ui/Spinner';
 import ThemeToggle from '../components/ui/ThemeToggle';
+import LanguageToggle from '../components/ui/LanguageToggle';
 import { AUTH_STATUS, useAuth } from '../auth/AuthProvider';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 
@@ -16,6 +18,7 @@ import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
  * of ten they are simply signed into the wrong Google account.
  */
 export default function AdminLoginPage() {
+  const { t } = useTranslation();
   const { status, error, errorKind, signIn, allowlist } = useAuth();
   const { setBranch } = useBranchTheme();
   const location = useLocation();
@@ -38,7 +41,8 @@ export default function AdminLoginPage() {
 
   return (
     <div className="relative grid min-h-dvh place-items-center overflow-hidden bg-surface bg-aurora px-4 py-10">
-      <div className="absolute right-4 top-4 z-10">
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
 
@@ -47,16 +51,14 @@ export default function AdminLoginPage() {
           <span className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-3xl bg-brand-600 text-brand-on shadow-glow">
             <LuGlasses className="h-6 w-6" aria-hidden="true" />
           </span>
-          <h1 className="text-2xl font-bold tracking-tight text-ink">Administrator sign-in</h1>
-          <p className="mt-1.5 text-sm text-ink-muted">
-            Attendance reporting for Win, Pwint and Yangon
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-ink">{t('admin.signIn')}</h1>
+          <p className="mt-1.5 text-sm text-ink-muted">{t('admin.signInSubtitle')}</p>
         </div>
 
         <div className="glass glass-sheen rounded-4xl p-6 shadow-float sm:p-8">
           {status === AUTH_STATUS.LOADING ? (
             <div className="py-10">
-              <Spinner size={26} label="Checking your session…" />
+              <Spinner size={26} label={t('admin.checkingSession')} />
             </div>
           ) : (
             <>
@@ -71,9 +73,11 @@ export default function AdminLoginPage() {
                 </span>
                 <span className="flex-1">
                   <span className="block text-[15px] font-bold tracking-tight text-ink">
-                    Continue with Google
+                    {t('admin.continueWithGoogle')}
                   </span>
-                  <span className="block text-xs text-ink-subtle">Use your administrator account</span>
+                  <span className="block text-xs text-ink-subtle">
+                    {t('admin.useAdminAccount')}
+                  </span>
                 </span>
                 <LuArrowRight
                   className="h-5 w-5 text-ink-subtle transition-transform duration-300 group-hover:translate-x-1"
@@ -100,22 +104,22 @@ export default function AdminLoginPage() {
                   <div className="min-w-0">
                     {errorKind === 'rejected' ? (
                       <>
-                        <p className="text-sm font-bold text-danger-ink">Not an administrator</p>
+                        <p className="text-sm font-bold text-danger-ink">{t('admin.notAdmin')}</p>
                         <p className="mt-1 break-words text-xs leading-relaxed text-danger-ink/85">
                           {error}
                         </p>
                         <p className="mt-2 text-xs text-danger-ink/70">
-                          Sign out of that Google account, or switch accounts, and try again.
+                          {t('admin.switchAccounts')}
                         </p>
                       </>
                     ) : (
                       <>
-                        <p className="text-sm font-bold text-warn-ink">Could not sign in</p>
+                        <p className="text-sm font-bold text-warn-ink">{t('admin.couldNotSignIn')}</p>
                         <p className="mt-1 break-words text-xs leading-relaxed text-warn-ink/90">
                           {error}
                         </p>
                         <p className="mt-2 text-xs text-warn-ink/75">
-                          This is not about your account — sign-in did not get that far.
+                          {t('admin.notAboutAccount')}
                         </p>
                       </>
                     )}
@@ -125,16 +129,16 @@ export default function AdminLoginPage() {
 
               {misconfigured ? (
                 <p className="mt-4 rounded-2xl bg-warn-soft px-4 py-3 text-xs leading-relaxed text-warn-ink">
-                  Firebase is not configured. Copy <code className="font-semibold">.env.example</code>{' '}
-                  to <code className="font-semibold">.env</code>, fill in the project values and
-                  restart the dev server.
+                  {t('admin.notConfigured')}
                 </p>
               ) : null}
 
               <div className="mt-6 flex items-start gap-3 rounded-2xl bg-surface-sunken/70 p-4">
                 <LuShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-ink" aria-hidden="true" />
                 <div className="min-w-0 text-xs leading-relaxed text-ink-muted">
-                  <p className="font-semibold text-ink">Restricted to {allowlist.length} accounts</p>
+                  <p className="font-semibold text-ink">
+                    {t('admin.restrictedTo', { count: allowlist.length })}
+                  </p>
                   {/* Masked. This page is on the public internet, and three
                       personal addresses printed in full is a spam list waiting
                       to be scraped. Enough is shown for an owner to recognise
@@ -153,11 +157,10 @@ export default function AdminLoginPage() {
         </div>
 
         <p className="mt-8 text-center text-xs text-ink-subtle">
-          Shop staff do not sign in here —{' '}
+          {t('admin.staffDoNotSignIn')}{' '}
           <Link to="/attendance/kiosk" className="font-semibold text-brand-ink hover:underline">
-            open the kiosk
+            {t('admin.openTheKiosk')}
           </Link>
-          .
         </p>
       </div>
     </div>

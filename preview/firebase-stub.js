@@ -18,6 +18,11 @@
  *    themselves unavailable.
  */
 import { STAFF, BRANCH_DOCS, buildAttendance } from './fixtures';
+import { createPinRecord } from '../src/Feature/Attendance/lib/crypto';
+
+/** The personal PIN every preview employee answers to. Demo value only. */
+const PREVIEW_STAFF_PIN = '1234';
+let previewStaffPinRecord = null;
 
 /* ────────────────────────────── the store ─────────────────────────────── */
 
@@ -26,6 +31,10 @@ const collections = {
   staff: new Map(STAFF.map((s) => [s.id, { ...s }])),
   attendance: new Map(buildAttendance().map((row) => [row.id, { ...row }])),
   attendanceDaily: new Map(),
+  /* Empty on purpose. The roll-ups are written by a Cloud Function that does
+     not exist yet, so the preview exercises the same fall-back the live app
+     takes today: derive the month from the raw attendance rows. */
+  attendanceMonthly: new Map(),
   auditLogs: new Map(),
 };
 
@@ -108,6 +117,7 @@ const PREVIEW_ADMIN = {
   email: 'kyawwinhtun564@gmail.com',
   displayName: 'Preview admin',
   photoURL: null,
+  isAnonymous: false,
   getIdTokenResult: async () => ({
     claims: { admin: true, email: 'kyawwinhtun564@gmail.com', email_verified: true },
   }),
@@ -144,6 +154,22 @@ export const signInWithRedirect = signInWithPopup;
 
 export const signInWithCustomToken = async () => ({ user: null });
 
+/**
+ * The kiosk signs in anonymously before reading the roster, because Firestore
+ * rules deny an unauthenticated read. Here the store is open, so this only has
+ * to resolve — but it must NOT overwrite `currentUser` when an admin is
+ * already signed in, or opening the kiosk from the preview chrome would
+ * silently sign the admin out of the dashboard behind it.
+ */
+export const signInAnonymously = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  if (!currentUser) {
+    currentUser = { uid: 'preview-anon', isAnonymous: true, getIdTokenResult: async () => ({ claims: {} }) };
+    emitAuth();
+  }
+  return { user: currentUser };
+};
+
 export const signOut = async () => {
   currentUser = null;
   emitAuth();
@@ -157,11 +183,31 @@ export const persistentLocalCache = () => ({});
 export const persistentMultipleTabManager = () => ({});
 
 export const collection = (db, name) => ({ __kind: 'collection', name, constraints: [] });
-export const doc = (db, name, id) => ({ __kind: 'doc', name, id });
+
+/**
+ * Accepts a full path, not just `(collection, id)`.
+ *
+ * A staff PIN lives at `staff/{id}/secrets/pin`, five segments deep. The old
+ * three-argument version dropped everything after the id, so that read
+ * silently returned the STAFF document instead — the preview would have shown
+ * a PIN check that could never match while the real SDK worked fine.
+ */
+export const doc = (db, ...segments) => {
+  const parts = segments.flatMap((segment) => String(segment).split('/')).filter(Boolean);
+  const id = parts.pop();
+  return { __kind: 'doc', name: parts.join('/'), id };
+};
+
+/** Subcollections are created on demand, the way Firestore creates them. */
+const mapFor = (name) => {
+  if (!collections[name]) collections[name] = new Map();
+  return collections[name];
+};
 
 export const where = (field, op, value) => ({ type: 'where', field, op, value });
 export const orderBy = (field, direction = 'asc') => ({ type: 'orderBy', field, direction });
 export const documentId = () => '__name__';
+export const limit = (n) => ({ type: 'limit', n });
 export const serverTimestamp = () => new Date().toISOString();
 
 export const query = (ref, ...constraints) => ({
@@ -189,7 +235,23 @@ export const onSnapshot = (ref, onNext, onError) => {
 export const getDocs = async (ref) => snapshotOf(ref.name, ref.constraints ?? []);
 
 export const getDoc = async (ref) => {
-  const data = collections[ref.name]?.get(ref.id);
+  let data = collections[ref.name]?.get(ref.id);
+
+  /* Give every preview employee the same demo PIN the chrome advertises, so
+     the personal sign-in and the admin PIN column can both be rehearsed.
+     Mirrors the real split: `verifier` holds the PBKDF2 record the kiosk
+     checks against, `pin` holds the PIN only an admin may read. Derived on
+     first use rather than at module load because it is real PBKDF2 — the
+     preview runs the same verification the shop does, at the same cost. */
+  if (!data && /^staff\/.+\/secrets$/.test(ref.name)) {
+    if (ref.id === 'verifier') {
+      previewStaffPinRecord ??= await createPinRecord(PREVIEW_STAFF_PIN);
+      data = previewStaffPinRecord;
+    } else if (ref.id === 'pin') {
+      data = { pin: PREVIEW_STAFF_PIN };
+    }
+  }
+
   return {
     id: ref.id,
     exists: () => Boolean(data),
@@ -198,8 +260,7 @@ export const getDoc = async (ref) => {
 };
 
 export const setDoc = async (ref, data, options = {}) => {
-  const target = collections[ref.name];
-  if (!target) return;
+  const target = mapFor(ref.name);
   const existing = options.merge ? (target.get(ref.id) ?? {}) : {};
   target.set(ref.id, { ...existing, ...data, id: ref.id });
   notify(ref.name);
@@ -284,9 +345,21 @@ export const httpsCallable = (fns, name) => async (payload) => {
   await likeANetwork();
   if (name === 'verifyBranchPin') {
     const expected = PREVIEW_PINS[payload?.branchId] ?? '1234';
-    return payload?.pin === expected
-      ? { data: { ok: true, ttlMinutes: 840 } }   // no token -> no sign-in attempt
-      : { data: { ok: false, reason: 'wrong-pin' } };
+    if (payload?.pin !== expected) return { data: { ok: false, reason: 'wrong-pin' } };
+    /* A correct PIN leaves the tablet holding an identity, exactly as the real
+       one does by minting a custom token. The preview used to skip this and
+       return `ok` with nobody signed in, which is a state production never
+       reaches — and it hid the reload race the roster now guards against,
+       because a preview with no user looked identical to a healthy one. */
+    if (!currentUser) {
+      currentUser = {
+        uid: 'preview-kiosk',
+        isAnonymous: true,
+        getIdTokenResult: async () => ({ claims: {} }),
+      };
+      emitAuth();
+    }
+    return { data: { ok: true, ttlMinutes: 840 } };
   }
   /* Everything else behaves like an undeployed project, which is what drives
      the app down the fallback paths this preview is meant to show. */

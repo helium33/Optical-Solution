@@ -16,6 +16,7 @@ import { functions } from '../config/firebase';
 import { attendanceCol, attendanceDoc, attendanceLogId } from './paths';
 import { computeWorkSession, businessDayKey, zonedTimeToUtc } from '../lib/time';
 import { deviceFingerprint } from '../lib/crypto';
+import { isCallableUnavailable } from '../lib/callableErrors';
 
 export const PUNCH = { CHECK_IN: 'check_in', CHECK_OUT: 'check_out' };
 export const AUTH_METHOD = { PIN: 'pin', BIOMETRIC: 'biometric' };
@@ -131,7 +132,7 @@ export async function submitPunch(punch) {
     const response = await callSubmitPunch(payload);
     return response.data;
   } catch (error) {
-    if (ALLOW_CLIENT_PUNCH && error?.code === 'functions/not-found') {
+    if (ALLOW_CLIENT_PUNCH && isCallableUnavailable(error)) {
       return submitPunchUnverified(payload);
     }
     throw error;

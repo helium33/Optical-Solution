@@ -26,7 +26,8 @@ rules_version = '2';
  *       database as customer orders.  (Recommended if you have the appetite.)
  *
  *  Either way, check for collection-name collisions first. This app writes:
- *      branches/   staff/   attendance/   attendanceDaily/   auditLogs/
+ *      branches/   staff/   attendance/   attendanceDaily/
+ *      attendanceMonthly/   auditLogs/
  *  `branches` is the one likely to clash with an ecommerce schema. If it does,
  *  rename it in src/Feature/Attendance/services/paths.js — every path in the
  *  app comes from that one file — and rename it here to match.
@@ -188,6 +189,15 @@ service cloud.firestore {
     /* Roll-ups maintained by a Cloud Function trigger. Read-only to everyone. */
     match /attendanceDaily/{docId} {
       allow read: if isAdmin() || isKiosk();
+      allow write: if false;
+    }
+
+    /* One document per person per month: attendanceMonthly/{branchId}_{month}_{staffId}.
+       Admin-only, unlike the daily roll-up — this is a month of somebody's
+       attendance and overtime, and a shop tablet that anyone can walk up to has
+       no business being able to read it. */
+    match /attendanceMonthly/{docId} {
+      allow read: if isAdmin();
       allow write: if false;
     }
 

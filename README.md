@@ -15,11 +15,18 @@ npm run dev            # storefront + attendance app
 npm run api            # json-server for the storefront navigation (port 3001)
 ```
 
-For the attendance app, copy the environment template first:
+For the attendance app, set up the environment first:
 
 ```bash
-cp .env.example .env   # fill in from the Firebase console
+npm run setup:env
 ```
+
+It creates `.env`, tells you exactly which values are still missing, and
+catches the usual Windows trap where Notepad saves the file as `.env.txt`.
+
+**`/` is the storefront, not the attendance app.** The dev server prints both
+sets of URLs on startup; the kiosk is at `/attendance/kiosk`. On a shop tablet
+set `VITE_DEFAULT_APP=attendance` in `.env` and `/` opens the kiosk directly.
 
 Without it the attendance app still boots and renders every screen — it just
 says, in plain words, that Firebase is not configured.

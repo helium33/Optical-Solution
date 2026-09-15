@@ -21,6 +21,8 @@ import {
   dayKeyRange,
   ATTENDANCE_STATUS,
 } from '../lib/time';
+import { workingDaysInMonth, summariseMonth } from '../lib/monthly';
+import { formatMonth } from '../i18n/months';
 import { BRANCHES } from '../config/branches';
 
 let passed = 0;
@@ -365,6 +367,165 @@ test('dayKeyRange is inclusive and crosses month ends', () => {
     '2026-08-30', '2026-08-31', '2026-09-01', '2026-09-02',
   ]);
   assert.equal(dayKeyRange('2026-09-01', '2026-09-30').length, 30);
+});
+
+/* ======================== monthly summary ============================= */
+
+/* Fixed "now" so these never drift: 2026-09-12 is a Saturday. */
+const SEPT_12 = new Date('2026-09-12T06:00:00Z');
+
+const staff = (id, name) => ({ id, name, role: 'sales_associate', branchId: 'win' });
+
+const row = (staffId, dayKey, extra = {}) => ({
+  staffId,
+  dayKey,
+  branchId: 'win',
+  checkIn: { at: `${dayKey}T02:30:00Z` },
+  status: ATTENDANCE_STATUS.ON_TIME,
+  minutes: { worked: 450, late: 0, overtime: 0 },
+  ...extra,
+});
+
+test('MONTHLY: working days exclude Sundays', () => {
+  const days = workingDaysInMonth('2026-09', { timeZone: TZ, now: SEPT_12 });
+  /* 1 Sep 2026 is a Tuesday. Sundays in range: the 6th. */
+  assert.ok(!days.includes('2026-09-06'));
+  assert.ok(days.includes('2026-09-05'));
+  assert.equal(days.length, 11); // 1-12 inclusive, minus one Sunday
+});
+
+test('MONTHLY: the rest of the month is not counted as absence', () => {
+  const days = workingDaysInMonth('2026-09', { timeZone: TZ, now: SEPT_12 });
+  assert.equal(days.at(-1), '2026-09-12');
+  assert.ok(!days.includes('2026-09-13'));
+});
+
+test('MONTHLY: a past month counts all of its working days', () => {
+  const days = workingDaysInMonth('2026-08', { timeZone: TZ, now: SEPT_12 });
+  assert.equal(days.length, 26); // 31 days, 5 Sundays in August 2026
+});
+
+test('MONTHLY: present and absent days are complementary', () => {
+  const summary = summariseMonth({
+    rows: [row('a', '2026-09-01'), row('a', '2026-09-02'), row('a', '2026-09-03')],
+    roster: [staff('a', 'Aye')],
+    month: '2026-09',
+    timeZone: TZ,
+    now: SEPT_12,
+  });
+  const [person] = summary;
+  assert.equal(person.presentDays, 3);
+  assert.equal(person.expectedWorkingDays, 11);
+  assert.equal(person.absentDays, 8);
+});
+
+test('MONTHLY: somebody absent all month still appears, with zero present', () => {
+  const summary = summariseMonth({
+    rows: [],
+    roster: [staff('a', 'Aye'), staff('b', 'Bo')],
+    month: '2026-09',
+    timeZone: TZ,
+    now: SEPT_12,
+  });
+  assert.equal(summary.length, 2);
+  assert.equal(summary[1].presentDays, 0);
+  assert.equal(summary[1].absentDays, 11);
+});
+
+test('MONTHLY: overtime hours are rounded per day, never on the total', () => {
+  /* Two 30-minute evenings. Summed first and rounded once that is 1 hour;
+     rounded per day, as the shop pays it, it is 2. */
+  const summary = summariseMonth({
+    rows: [
+      row('a', '2026-09-01', { minutes: { worked: 480, late: 0, overtime: 30 } }),
+      row('a', '2026-09-02', { minutes: { worked: 480, late: 0, overtime: 30 } }),
+    ],
+    roster: [staff('a', 'Aye')],
+    month: '2026-09',
+    timeZone: TZ,
+    now: SEPT_12,
+  });
+  assert.equal(summary[0].overtimeMinutes, 60);
+  assert.equal(summary[0].overtimeHours, 2);
+});
+
+test('MONTHLY: a stored overtimeHours is trusted over re-deriving it', () => {
+  /* The clock-out already billed this day. Recomputing from minutes would
+     silently disagree with the payslip the person was given. */
+  const summary = summariseMonth({
+    rows: [row('a', '2026-09-01', { minutes: { worked: 480, overtime: 90, overtimeHours: 2 } })],
+    roster: [staff('a', 'Aye')],
+    month: '2026-09',
+    timeZone: TZ,
+    now: SEPT_12,
+  });
+  assert.equal(summary[0].overtimeHours, 2);
+});
+
+test('MONTHLY: late days and late minutes accumulate separately', () => {
+  const summary = summariseMonth({
+    rows: [
+      row('a', '2026-09-01', { status: ATTENDANCE_STATUS.LATE, minutes: { worked: 440, late: 12, overtime: 0 } }),
+      row('a', '2026-09-02', { status: ATTENDANCE_STATUS.LATE, minutes: { worked: 445, late: 7, overtime: 0 } }),
+      row('a', '2026-09-03'),
+    ],
+    roster: [staff('a', 'Aye')],
+    month: '2026-09',
+    timeZone: TZ,
+    now: SEPT_12,
+  });
+  assert.equal(summary[0].lateDays, 2);
+  assert.equal(summary[0].lateMinutes, 19);
+  assert.equal(summary[0].presentDays, 3);
+});
+
+test('MONTHLY: a row with no clock-in is not a present day', () => {
+  /* An admin-created placeholder, or a write that failed halfway. Counting it
+     would mark somebody present who never turned up. */
+  const summary = summariseMonth({
+    rows: [{ staffId: 'a', dayKey: '2026-09-01', branchId: 'win', checkIn: null, minutes: {} }],
+    roster: [staff('a', 'Aye')],
+    month: '2026-09',
+    timeZone: TZ,
+    now: SEPT_12,
+  });
+  assert.equal(summary[0].presentDays, 0);
+});
+
+test('MONTHLY: rows for somebody off the roster are ignored, not crashed on', () => {
+  const summary = summariseMonth({
+    rows: [row('ghost', '2026-09-01'), row('a', '2026-09-01')],
+    roster: [staff('a', 'Aye')],
+    month: '2026-09',
+    timeZone: TZ,
+    now: SEPT_12,
+  });
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].presentDays, 1);
+});
+
+test('MONTHLY: absent days never go negative', () => {
+  /* Two branches, one person, both rows land on the same staffId — or simply
+     more punches than expected days. The figure floors at zero. */
+  const rows = Array.from({ length: 20 }, (_, i) =>
+    row('a', `2026-09-${String(i + 1).padStart(2, '0')}`),
+  );
+  const summary = summariseMonth({
+    rows,
+    roster: [staff('a', 'Aye')],
+    month: '2026-09',
+    timeZone: TZ,
+    now: SEPT_12,
+  });
+  assert.equal(summary[0].absentDays, 0);
+});
+
+test('MONTHLY: the month heading is Burmese without trusting browser ICU', () => {
+  /* Chromium builds with small-icu resolve 'my-MM' to en-US and hand back
+     "September 2026" to a reader who asked for Burmese. */
+  assert.equal(formatMonth('2026-09', 'my'), 'စက်တင်ဘာ 2026');
+  assert.equal(formatMonth('2026-01', 'my-MM'), 'ဇန်နဝါရီ 2026');
+  assert.equal(formatMonth('2026-12', 'en'), 'December 2026');
 });
 
 /* ============================= report ================================= */

@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { LuGlasses, LuArrowRight, LuArrowLeft } from 'react-icons/lu';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { LuGlasses, LuArrowRight, LuArrowLeft, LuUsers } from 'react-icons/lu';
 
 import PinPad from '../components/kiosk/PinPad';
+import OvertimeToggle from '../components/kiosk/OvertimeToggle';
+import BranchHierarchyDialog from '../components/kiosk/BranchHierarchyDialog';
 import ThemeToggle from '../components/ui/ThemeToggle';
+import LanguageToggle from '../components/ui/LanguageToggle';
 import Spinner from '../components/ui/Spinner';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useBranches } from '../config/BranchesProvider';
-import { unlockKiosk } from '../services/verification.service';
+import { unlockKiosk, unlockWithStaffPin } from '../services/verification.service';
 import { openKioskSession } from '../services/kioskSession';
 import { ADMIN_SEQUENCE } from '../services/adminReveal';
 
@@ -21,6 +25,7 @@ import { ADMIN_SEQUENCE } from '../services/adminReveal';
  * correctly-themed screen appearing after a correct PIN.
  */
 export default function KioskGatePage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { branchId: branchParam } = useParams();
   const { setBranch } = useBranchTheme();
@@ -29,6 +34,8 @@ export default function KioskGatePage() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [hierarchyOpen, setHierarchyOpen] = useState(false);
+  const [overtime, setOvertime] = useState(false);
   /* A ref, not the state, guards re-entry: state is a render behind. */
   const busyRef = useRef(false);
 
@@ -73,11 +80,35 @@ export default function KioskGatePage() {
           return;
         }
 
+        /* Not the branch PIN. Ask the other question these four digits could
+           be answering: is this somebody's own PIN? One keypad, because a
+           staff member should not have to get the shared roster unlocked for
+           them before they can reach their own screen. */
+        if (result.reason === 'wrong-pin') {
+          const asStaff = await unlockWithStaffPin(branch.id, value);
+          if (asStaff.ok) {
+            openKioskSession(branch.id, { ttlMinutes: result.ttlMinutes ?? 840 });
+            navigate(`/attendance/kiosk/${branch.id}`, {
+              replace: true,
+              state: { staffId: asStaff.staff.id, pin: value, overtime },
+            });
+            return;
+          }
+          /* A failure that is not "nobody matched" is worth reporting as
+             itself — an unenabled anonymous sign-in or unpublished rules say
+             nothing about whether the PIN was right. */
+          if (asStaff.reason !== 'wrong-pin') {
+            setPin('');
+            setError(errorKeyFor(asStaff.reason));
+            return;
+          }
+        }
+
         setPin('');
-        setError(messageFor(result.reason));
-      } catch (unexpected) {
+        setError(errorKeyFor(result.reason));
+      } catch {
         setPin('');
-        setError(unexpected?.message ?? 'Something went wrong. Try again.');
+        setError('errors.generic');
       } finally {
         /* Always runs, whatever happened. The spinner cannot outlive the
            request any more. */
@@ -85,7 +116,7 @@ export default function KioskGatePage() {
         setBusy(false);
       }
     },
-    [branch, navigate],
+    [branch, navigate, overtime],
   );
 
   const onPinChange = useCallback(
@@ -105,7 +136,8 @@ export default function KioskGatePage() {
 
   return (
     <div className="relative grid min-h-dvh place-items-center overflow-hidden bg-surface bg-aurora px-4 py-10">
-      <div className="absolute right-4 top-4 z-10">
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
 
@@ -114,9 +146,9 @@ export default function KioskGatePage() {
           <span className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-3xl bg-brand-600 text-brand-on shadow-glow">
             <LuGlasses className="h-6 w-6" aria-hidden="true" />
           </span>
-          <h1 className="text-2xl font-bold tracking-tight text-ink">Optical Solution</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-ink">{t('kiosk.brand')}</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            {branch ? `Unlock the ${branch.shortName} kiosk` : 'Which shop is this tablet in?'}
+            {branch ? t('kiosk.unlockOrOwnPin', { branch: branch.shortName }) : t('kiosk.whichShop')}
           </p>
         </div>
 
@@ -148,33 +180,75 @@ export default function KioskGatePage() {
           <div className="animate-fade-up glass glass-sheen rounded-4xl p-6 shadow-float sm:p-8">
             {busy ? (
               <div className="py-16">
-                <Spinner size={28} label="Unlocking…" />
+                <Spinner size={28} label={t('kiosk.unlocking')} />
               </div>
             ) : (
               <>
+                {/* ---- OVERTIME: above the keypad, decided before the PIN ----
+                    Nobody has said who they are yet, so there is no shift to
+                    measure — the switch records the intent and the figure is
+                    worked out once the PIN names the person. */}
+                <div className="mb-5">
+                  <OvertimeToggle
+                    checked={overtime}
+                    onChange={setOvertime}
+                    unknownEligibility
+                  />
+                </div>
+
                 <PinPad value={pin} onChange={onPinChange} length={4} error={Boolean(error)} />
                 {error ? (
-                  <p className="mt-5 text-center text-sm font-semibold text-danger-ink" role="alert">
-                    {error}
-                  </p>
+                  <div className="mt-5 text-center">
+                    <p className="text-sm font-semibold text-danger-ink" role="alert">
+                      {t(error)}
+                    </p>
+                    {/* Both mean the server side of the PIN check could not be
+                        reached at all — a genuinely wrong PIN never lands
+                        here, so a diagnostics link is never shown for one. */}
+                    {error === 'errors.noServer' || error === 'errors.notDeployed' ? (
+                      <Link
+                        to="/attendance/diagnostics"
+                        className="mt-1.5 inline-block text-xs font-bold text-brand-ink hover:underline"
+                      >
+                        {t('kiosk.runDiagnostics')}
+                      </Link>
+                    ) : null}
+                  </div>
                 ) : null}
+                {/* Above "choose a different shop", because it answers the
+                    question someone actually has at a locked keypad — "is this
+                    my branch, and who is on it?" — without being a way back
+                    out of the screen. */}
+                <button
+                  type="button"
+                  onClick={() => setHierarchyOpen(true)}
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface-card/70 px-4 py-3 text-sm font-bold text-ink shadow-soft transition-all duration-300 ease-expo hover:-translate-y-0.5 hover:shadow-lift tap-none"
+                >
+                  <LuUsers className="h-4 w-4 text-brand-ink" aria-hidden="true" />
+                  {t('kiosk.viewBranch')}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => { setSelected(null); setPin(''); setError(null); }}
-                  className="mt-6 inline-flex w-full items-center justify-center gap-2 text-xs font-semibold text-ink-subtle transition-colors hover:text-ink"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 text-xs font-semibold text-ink-subtle transition-colors hover:text-ink"
                 >
                   <LuArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                  Choose a different shop
+                  {t('kiosk.chooseAnother')}
                 </button>
               </>
             )}
           </div>
         )}
 
-        <p className="mt-8 text-center text-xs text-ink-subtle">
-          Staff do not need an account. Ask a supervisor for the branch PIN.
-        </p>
+        <p className="mt-8 text-center text-xs text-ink-subtle">{t('kiosk.askSupervisor')}</p>
       </div>
+
+      <BranchHierarchyDialog
+        open={hierarchyOpen}
+        onClose={() => setHierarchyOpen(false)}
+        branch={branch}
+      />
     </div>
   );
 }
@@ -185,19 +259,28 @@ export default function KioskGatePage() {
  * "Cannot reach the server" is useless when the real answer is "nobody has
  * deployed the function that checks PINs yet" — so that case says so, and says
  * what to do about it.
+ *
+ * Returns a translation key rather than a sentence: the message is held in
+ * state, and a sentence frozen at failure time would stay in the old language
+ * after the reader switches to the one they can read.
  */
-function messageFor(reason) {
+function errorKeyFor(reason) {
   switch (reason) {
     case 'rate-limited':
-      return 'Too many attempts. Wait a minute before trying again.';
+      return 'errors.tooManyAttempts';
+    case 'anonymous-disabled':
+      return 'errors.anonymousDisabled';
     case 'not-deployed':
-      return 'PIN checking is not set up on the server yet. Deploy the verifyBranchPin function, or set VITE_ALLOW_CLIENT_PUNCH=true for local testing.';
+      return 'errors.notDeployed';
     case 'timeout':
-      return 'The server did not answer. Check the connection and try again.';
+      return 'errors.timeout';
     case 'unavailable':
-      return 'Cannot reach the server. Check the connection.';
+    case 'sign-in-failed':
+      return 'errors.noServer';
+    case 'rules-not-published':
+      return 'errors.rulesNotPublished';
     default:
-      return 'That is not the PIN for this branch.';
+      return 'errors.wrongBranchPin';
   }
 }
 

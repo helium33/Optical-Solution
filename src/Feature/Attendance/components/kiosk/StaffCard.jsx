@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { LuFingerprint, LuArrowRight } from 'react-icons/lu';
 
 import Avatar from '../ui/Avatar';
@@ -13,11 +14,12 @@ import { roleLabel } from '../../config/roles';
  * changes with it. Three states: not in yet, on shift, done for the day.
  */
 export default function StaffCard({ staff, log, timezone, elapsedMinutes, onSelect, disabled }) {
+  const { t } = useTranslation();
   const checkedIn = Boolean(log?.checkIn?.at);
   const checkedOut = Boolean(log?.checkOut?.at);
   const done = checkedIn && checkedOut;
 
-  const action = done ? null : checkedIn ? 'Clock out' : 'Clock in';
+  const action = done ? null : checkedIn ? t('kiosk.clockOut') : t('kiosk.clockIn');
 
   return (
     <button
@@ -44,11 +46,11 @@ export default function StaffCard({ staff, log, timezone, elapsedMinutes, onSele
         <span className="flex items-center gap-2">
           <span className="truncate text-[15px] font-bold tracking-tight text-ink">{staff.name}</span>
           {staff.hasBiometrics ? (
-            <LuFingerprint className="h-3.5 w-3.5 shrink-0 text-brand-ink/60" aria-label="Fingerprint enrolled" />
+            <LuFingerprint className="h-3.5 w-3.5 shrink-0 text-brand-ink/60" aria-label={t('kiosk.fingerprintEnrolled')} />
           ) : null}
         </span>
         <span className="mt-0.5 block truncate text-xs font-medium text-ink-subtle">
-          {roleLabel(staff.role)}
+          {roleLabel(staff.role, t)}
         </span>
 
         <span className="mt-2 flex flex-wrap items-center gap-2">
@@ -60,13 +62,13 @@ export default function StaffCard({ staff, log, timezone, elapsedMinutes, onSele
             />
           ) : (
             <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
-              Not clocked in
+              {t('kiosk.notClockedIn')}
             </span>
           )}
 
           {checkedIn && !done && elapsedMinutes != null ? (
             <span className="text-[11px] font-semibold text-ink-muted tabular">
-              {formatDuration(elapsedMinutes)} so far
+              {t('kiosk.soFar', { duration: formatDuration(elapsedMinutes) })}
             </span>
           ) : null}
 

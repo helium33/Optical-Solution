@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LuUsers, LuTimer, LuCircleAlert, LuFlaskConical, LuNetwork } from 'react-icons/lu';
 
 import FilterBar from '../components/dashboard/FilterBar';
@@ -7,15 +7,18 @@ import AttendanceTrendChart from '../components/dashboard/AttendanceTrendChart';
 import OvertimeBreakdownChart from '../components/dashboard/OvertimeBreakdownChart';
 import AttendanceTable from '../components/dashboard/AttendanceTable';
 import OrgTree from '../components/dashboard/OrgTree';
+import MonthlySummary from '../components/dashboard/MonthlySummary';
 import AddStaffDialog from '../components/dashboard/AddStaffDialog';
 import StaffDetailDialog from '../components/dashboard/StaffDetailDialog';
 import BranchSettingsDialog from '../components/dashboard/BranchSettingsDialog';
 import ThemeToggle from '../components/ui/ThemeToggle';
+import LanguageToggle from '../components/ui/LanguageToggle';
 import Segmented from '../components/ui/Segmented';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { BRANCHES, BRANCH_IDS } from '../config/branches';
 import { STAFF_ROLE_ORDER } from '../config/roles';
 import { dayKeyRange, businessDayKey, toDecimalHours, formatDuration } from '../lib/time';
+import { summariseMonth } from '../lib/monthly';
 
 /**
  * Dashboard preview with synthetic data. DEV BUILDS ONLY — the route that
@@ -121,6 +124,23 @@ export default function DashboardPreviewPage() {
   const [settingsFor, setSettingsFor] = useState(null);
 
   const { keys, roster, rows: allRows } = useMemo(buildFixture, []);
+
+  const previewRoster = useMemo(
+    () => roster.map((person) => ({ ...person, active: true })),
+    [roster],
+  );
+
+  /* Stable identity: MonthlySummary re-fetches whenever `load` changes. */
+  const loadMonthly = useCallback(
+    ({ month, timeZone }) =>
+      summariseMonth({
+        rows: allRows.filter((row) => row.dayKey.startsWith(month)),
+        roster: previewRoster,
+        month,
+        timeZone,
+      }),
+    [allRows, previewRoster],
+  );
 
   const branch = filters.branchId === 'all' ? null : BRANCHES[filters.branchId];
   useEffect(() => setBranch(branch?.theme ?? HOUSE_THEME), [branch, setBranch]);
@@ -229,15 +249,29 @@ export default function DashboardPreviewPage() {
             options={[
               { value: 'overview', label: 'Reports' },
               { value: 'team', label: 'Team' },
+              { value: 'monthly', label: 'Monthly' },
             ]}
             value={view}
             onChange={setView}
           />
+          <LanguageToggle />
           <ThemeToggle />
         </div>
       </div>
 
-      {view === 'team' ? (
+      {view === 'monthly' ? (
+        /* The real component and the real reduction; only the Firestore read is
+           replaced, with this page's own fixture. Pointing it at the stub store
+           instead would summarise a *different* set of people — the store and
+           this page build their rosters separately — and every card would read
+           zero present days, which looks exactly like a broken feature. */
+        <MonthlySummary
+          branchIds={BRANCH_IDS}
+          roster={previewRoster}
+          timeZone="Asia/Yangon"
+          load={loadMonthly}
+        />
+      ) : view === 'team' ? (
         <section className="pt-2">
           <header className="mb-4">
             <h2 className="inline-flex items-center gap-2 text-base font-bold tracking-tight text-ink">
@@ -249,7 +283,7 @@ export default function DashboardPreviewPage() {
             </p>
           </header>
           <OrgTree
-            staff={roster.map((person) => ({ ...person, active: true }))}
+            staff={previewRoster}
             logs={[]}
             branchIds={BRANCH_IDS}
             timezone="Asia/Yangon"

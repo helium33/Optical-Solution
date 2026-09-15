@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LuMapPin, LuWifi, LuWifiOff, LuRefreshCw, LuChevronDown } from 'react-icons/lu';
 
 import Spinner from '../ui/Spinner';
+import { usePolicyText } from '../../i18n/policyText';
 import { ACCESS, WARNING } from '../../lib/accessPolicy';
 import { NETWORK } from '../../lib/network';
 import { formatDistance } from '../../lib/geo';
@@ -16,8 +18,10 @@ import { formatDistance } from '../../lib/geo';
  * "why does it say I'm not here?" and the answer is usually a number.
  */
 export default function GeoStatusPill({ geo, className = '' }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const { policy, fence, network } = geo;
+  const text = usePolicyText(policy);
   const pending = policy.access === ACCESS.PENDING;
   const allowed = policy.access === ACCESS.ALLOWED;
 
@@ -52,11 +56,11 @@ export default function GeoStatusPill({ geo, className = '' }) {
 
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold leading-tight">
-            {policy.title}
+            {text.title}
           </span>
           {fence?.distance != null && !pending ? (
             <span className="block truncate text-[11px] font-medium opacity-70">
-              {formatDistance(fence.distance)} from the pin
+              {t('location.fromPin', { distance: formatDistance(fence.distance) })}
               {fence.accuracy != null ? ` · ±${Math.round(fence.accuracy)} m` : ''}
             </span>
           ) : null}
@@ -70,29 +74,30 @@ export default function GeoStatusPill({ geo, className = '' }) {
 
       {open ? (
         <div className="animate-fade-up mt-2 space-y-3 rounded-2xl border border-line bg-surface-card p-4 shadow-soft">
-          {policy.detail ? <p className="text-sm leading-relaxed text-ink-muted">{policy.detail}</p> : null}
+          {text.detail ? <p className="text-sm leading-relaxed text-ink-muted">{text.detail}</p> : null}
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-            <Row label="Distance" value={fence?.distance != null ? formatDistance(fence.distance) : '—'} />
-            <Row label="Allowed radius" value={fence?.radius ? `${fence.radius} m` : '—'} />
             <Row
-              label="GPS accuracy"
+              label={t('location.distance')}
+              value={fence?.distance != null ? formatDistance(fence.distance) : '—'}
+            />
+            <Row label={t('location.allowedRadius')} value={fence?.radius ? `${fence.radius} m` : '—'} />
+            <Row
+              label={t('location.accuracy')}
               value={fence?.accuracy != null ? `±${Math.round(fence.accuracy)} m` : '—'}
             />
-            <Row label="Network" value={<NetworkValue network={network} />} />
+            <Row label={t('location.network')} value={<NetworkValue network={network} />} />
           </dl>
 
           {policy.warnings?.includes(WARNING.NETWORK_UNVERIFIED) ? (
             <p className="rounded-xl bg-warn-soft px-3 py-2 text-xs text-warn-ink">
-              The network could not be confirmed from this device. The punch will still be
-              checked against the shop network by the server.
+              {t('location.networkUnverified')}
             </p>
           ) : null}
 
           {policy.warnings?.includes(WARNING.BORDERLINE_FIX) ? (
             <p className="rounded-xl bg-surface-sunken px-3 py-2 text-xs text-ink-muted">
-              You are close to the edge of the allowed area. Move a little closer to the shop if
-              the check fails.
+              {t('location.borderline')}
             </p>
           ) : null}
 
@@ -102,7 +107,7 @@ export default function GeoStatusPill({ geo, className = '' }) {
             className="inline-flex items-center gap-2 rounded-xl bg-surface-sunken px-3 py-2 text-xs font-semibold text-ink-muted transition-colors hover:bg-brand-500/10 hover:text-brand-ink"
           >
             <LuRefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-            Re-check my location
+            {t('location.recheck')}
           </button>
         </div>
       ) : null}
@@ -118,21 +123,27 @@ const Row = ({ label, value }) => (
 );
 
 function NetworkValue({ network }) {
-  if (!network || network.pending) return <span className="text-ink-subtle">Checking…</span>;
+  const { t } = useTranslation();
+
+  if (!network || network.pending) {
+    return <span className="text-ink-subtle">{t('location.checking')}</span>;
+  }
   if (network.verdict === NETWORK.MATCH) {
     return (
       <span className="inline-flex items-center gap-1 text-ok-ink">
-        <LuWifi className="h-3.5 w-3.5" aria-hidden="true" /> Shop Wi-Fi
+        <LuWifi className="h-3.5 w-3.5" aria-hidden="true" /> {t('location.shopWifi')}
       </span>
     );
   }
   if (network.verdict === NETWORK.MISMATCH) {
     return (
       <span className="inline-flex items-center gap-1 text-danger-ink">
-        <LuWifiOff className="h-3.5 w-3.5" aria-hidden="true" /> Other network
+        <LuWifiOff className="h-3.5 w-3.5" aria-hidden="true" /> {t('location.otherNetwork')}
       </span>
     );
   }
-  if (network.verdict === NETWORK.SKIPPED) return <span className="text-ink-subtle">Not required</span>;
-  return <span className="text-ink-subtle">Unknown</span>;
+  if (network.verdict === NETWORK.SKIPPED) {
+    return <span className="text-ink-subtle">{t('location.notRequired')}</span>;
+  }
+  return <span className="text-ink-subtle">{t('location.unknown')}</span>;
 }
