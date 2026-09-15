@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react-swc'
+import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 /**
@@ -38,8 +39,65 @@ const announceRoutes = () => ({
   },
 });
 
+/**
+ * Installable kiosk.
+ *
+ * The tablet in the shop should open on the roster, not in a browser with an
+ * address bar a staff member can wander out of, so `start_url` points at the
+ * kiosk rather than `/` and the display mode is standalone.
+ *
+ * `autoUpdate` rather than a prompt: nobody is going to tap "a new version is
+ * available" on a wall-mounted tablet, and a shop running last week's punch
+ * rules because an update was never accepted is worse than a reload.
+ *
+ * The storefront's hero photograph is deliberately NOT precached — it is 1.3 MB
+ * the kiosk never shows. Firestore is left alone too: it keeps its own offline
+ * store in IndexedDB, and a service worker caching its responses on top would
+ * be a second, staler answer to the same question.
+ */
+const pwa = () =>
+  VitePWA({
+    registerType: 'autoUpdate',
+    includeAssets: ['apple-touch-icon.png', 'logo.svg'],
+    manifest: {
+      name: 'Attendence-muse-app',
+      short_name: 'Attendance',
+      description: 'Staff attendance for Win Vision, Pwint Eyewear and Yangon Eyewear.',
+      start_url: '/attendance/kiosk',
+      scope: '/',
+      display: 'standalone',
+      orientation: 'portrait',
+      background_color: '#f6f7fb',
+      theme_color: '#f6f7fb',
+      lang: 'my',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+        { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+    },
+    workbox: {
+      globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+      navigateFallback: '/index.html',
+      runtimeCaching: [
+        {
+          /* Burmese has no fallback on most devices: without Noto Sans Myanmar
+             every label renders as empty boxes, so the font is worth holding
+             onto across an outage even though the rest of the app is not. */
+          urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'google-fonts',
+            expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            cacheableResponse: { statuses: [0, 200] },
+          },
+        },
+      ],
+    },
+  });
+
 export default defineConfig({
-  plugins: [react(), announceRoutes()],
+  plugins: [react(), announceRoutes(), pwa()],
   optimizeDeps: {
     /**
      * Scan only the real entry point.

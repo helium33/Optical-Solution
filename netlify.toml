@@ -1,0 +1,33 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Every attendance URL is handled by the router in the browser, so the server
+# has to answer all of them with the app shell. Without this, opening
+# /attendance/kiosk directly — which is exactly what the installed app does on
+# launch — returns a 404 from Netlify before React ever loads.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# The service worker decides when everything else may be stale, so it must not
+# be stale itself: a cached sw.js is a tablet that can never be updated again.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Hashed filenames, so these can be held forever.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
