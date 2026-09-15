@@ -131,6 +131,7 @@
     "notDeployed": "PIN checking is not set up on the server yet. Deploy the verifyBranchPin function, or set VITE_ALLOW_CLIENT_PUNCH=true for local testing.",
     "timeout": "The server did not answer. Check the connection and try again.",
     "rulesNotDeployed": "This tablet is signed in but Firestore is refusing to send the roster — the security rules have not been deployed for the attendance collections. Run `npm run merge:rules` and publish the result.",
+    "kioskSessionExpired": "This tablet's sign-in has expired. Lock the kiosk and unlock it again with the branch PIN — the roster cannot be read without an identity.",
     "indexMissing": "The roster query needs a Firestore index that has not been created yet. Run `firebase deploy --only firestore:indexes`, or open the link in the message below — it creates exactly the right index. Indexes take a minute or two to build."
   },
   "admin": {

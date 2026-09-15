@@ -100,6 +100,30 @@ export function AuthProvider({ children }) {
         return;
       }
 
+      /* A development kiosk: signed in anonymously because verifyBranchPin is
+         not deployed to mint the branch-scoped custom token the check above
+         looks for. It has no claims and no email, so the allowlist check below
+         would call it a rejected admin and sign it out — which is precisely
+         what happened: the tablet unlocked, navigated to the roster, and was
+         signed out between the two. Every read then went out unauthenticated
+         and Firestore refused it, so a correct ruleset still produced
+         "Missing or insufficient permissions" and no amount of republishing
+         could fix it.
+
+         An anonymous session is a real identity and deliberately not an
+         administrator, which is what KIOSK already means here. It carries no
+         branchId, so `kioskBranchId` stays null and rules cannot scope it to
+         one shop — the honest limitation of running without the Functions. */
+      if (nextUser.isAnonymous) {
+        rejectedEmail.current = null;
+        setErrorKind(null);
+        setError(null);
+        setClaims(token?.claims ?? null);
+        setUser(nextUser);
+        setStatus(AUTH_STATUS.KIOSK);
+        return;
+      }
+
       if (!isAllowlistedAdmin(nextUser.email)) {
         rejectedEmail.current = nextUser.email;
         setErrorKind('rejected');

@@ -11,6 +11,7 @@ import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useGeoFence } from '../hooks/useGeoFence';
 import { useNow } from '../hooks/useNow';
 import { useBranch } from '../config/BranchesProvider';
+import { useFirebaseUser } from '../hooks/useFirebaseUser';
 import { subscribeBranchStaff } from '../services/staff.service';
 import { STAFF_ROLE_ORDER, roleLabel } from '../config/roles';
 import { subscribeDayBoard } from '../services/attendance.service';
@@ -34,6 +35,10 @@ export default function KioskPage() {
   /* Live config: an owner changing the shift end must reach this tablet
      without a redeploy. */
   const branch = useBranch(branchId);
+  /* Every read below requires an identity. Holding the subscriptions until
+     Firebase has restored one is what stops a reload from burning them on an
+     unauthenticated request that rules refuse permanently. */
+  const { ready: authReady, uid } = useFirebaseUser();
   const now = useNow(30_000);
   const dayKey = useMemo(
     () => (branch ? businessDayKey(now, branch.timezone) : null),
@@ -74,6 +79,16 @@ export default function KioskPage() {
   /* ---- live data ---- */
   useEffect(() => {
     if (!branchId) return undefined;
+    if (!authReady) return undefined;
+    if (!uid) {
+      /* Auth has settled and there is nobody. The stored kiosk session has
+         outlived the Firebase one, so the fix is to unlock again — not to go
+         looking at security rules, which is where the old message sent them. */
+      setStaff([]);
+      setLoadError('errors.kioskSessionExpired');
+      setLoadErrorDetail(null);
+      return undefined;
+    }
     return subscribeBranchStaff(branchId, setStaff, (error) => {
       setStaff([]);
       /* A key, not the sentence, so it re-renders in whichever language the
@@ -96,12 +111,15 @@ export default function KioskPage() {
       );
       setLoadErrorDetail(error?.code ? `${error.code}: ${error.message ?? ''}` : null);
     });
-  }, [branchId]);
+    /* `uid` is a dependency rather than a guard alone: when the session lands a
+       moment after mount this effect re-runs and subscribes again, which is the
+       whole recovery. */
+  }, [branchId, authReady, uid]);
 
   useEffect(() => {
-    if (!branchId || !dayKey) return undefined;
+    if (!branchId || !dayKey || !uid) return undefined;
     return subscribeDayBoard(branchId, dayKey, setLogs, () => setLogs([]));
-  }, [branchId, dayKey]);
+  }, [branchId, dayKey, uid]);
 
   const logsById = useMemo(() => {
     const map = new Map();

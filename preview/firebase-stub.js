@@ -306,9 +306,21 @@ export const httpsCallable = (fns, name) => async (payload) => {
   await likeANetwork();
   if (name === 'verifyBranchPin') {
     const expected = PREVIEW_PINS[payload?.branchId] ?? '1234';
-    return payload?.pin === expected
-      ? { data: { ok: true, ttlMinutes: 840 } }   // no token -> no sign-in attempt
-      : { data: { ok: false, reason: 'wrong-pin' } };
+    if (payload?.pin !== expected) return { data: { ok: false, reason: 'wrong-pin' } };
+    /* A correct PIN leaves the tablet holding an identity, exactly as the real
+       one does by minting a custom token. The preview used to skip this and
+       return `ok` with nobody signed in, which is a state production never
+       reaches — and it hid the reload race the roster now guards against,
+       because a preview with no user looked identical to a healthy one. */
+    if (!currentUser) {
+      currentUser = {
+        uid: 'preview-kiosk',
+        isAnonymous: true,
+        getIdTokenResult: async () => ({ claims: {} }),
+      };
+      emitAuth();
+    }
+    return { data: { ok: true, ttlMinutes: 840 } };
   }
   /* Everything else behaves like an undeployed project, which is what drives
      the app down the fallback paths this preview is meant to show. */
