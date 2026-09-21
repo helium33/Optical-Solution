@@ -240,7 +240,17 @@ function toMessage(error) {
   }
   if (code === 'auth/network-request-failed') return 'No connection. Check the network and try again.';
   if (code === 'auth/unauthorized-domain') {
-    return 'This domain is not in the Firebase Auth authorised list. Add it in Authentication → Settings.';
+    /* The address is printed rather than described. "Add this domain" sends
+       someone to the browser bar to retype a hostname that may be a deploy
+       preview, a www prefix, or a custom domain they forgot they set — and one
+       wrong character reads exactly like having done nothing at all. Firebase
+       wants the bare host, so that is what is shown, ready to copy. */
+    const host = typeof window === 'undefined' ? '' : window.location.hostname;
+    return (
+      `Firebase does not recognise this website's address. Copy it exactly — ${host} — ` +
+      'and add it in Firebase Console → Authentication → Settings → Authorized domains → ' +
+      'Add domain. No https://, no slash. Then reload this page; no redeploy is needed.'
+    );
   }
   if (code === 'auth/invalid-api-key' || code === 'auth/api-key-not-valid') {
     return 'The Firebase API key is wrong. Check VITE_FIREBASE_API_KEY.';
