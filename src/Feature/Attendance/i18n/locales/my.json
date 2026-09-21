@@ -163,7 +163,9 @@
     "indexMissing": "ဝန်ထမ်းစာရင်း query အတွက် Firestore index မဖန်တီးရသေးပါ။ `firebase deploy --only firestore:indexes` ကို run ပါ၊ သို့မဟုတ် အောက်ပါစာသားထဲက လင့်ခ်ကို နှိပ်ပါ — မှန်ကန်သော index ကို တိုက်ရိုက်ဖန်တီးပေးပါမည်။ Index ပြီးမြောက်ရန် တစ်မိနစ်နှစ်မိနစ် ကြာပါသည်။",
     "noPinSet": "သင့်အတွက် PIN သတ်မှတ်မထားသေးပါ။ ကြီးကြပ်ရေးမှူးထံ တောင်းပါ။",
     "pinUnreadable": "Firestore က PIN ကို ဖတ်/ရေး ခွင့်မပြုပါ။ ဤသည်မှာ PIN ပြဿနာ မဟုတ်ဘဲ rules ပြဿနာဖြစ်သည် — `npm run merge:rules` ကို run ပြီး firestore.rules.merged ကို Firebase Console → Firestore → Rules တွင် paste လုပ်၍ Publish နှိပ်ပါ။",
-    "rulesNotPublished": "Firestore က ဝန်ထမ်းစာရင်းကို ဖတ်ခွင့်မပြုပါ။ Rules မတင်ရသေးပါ — `npm run merge:rules` ကို run ပြီး publish လုပ်ပါ။"
+    "rulesNotPublished": "Firestore က ဝန်ထမ်းစာရင်းကို ဖတ်ခွင့်မပြုပါ။ Rules မတင်ရသေးပါ — `npm run merge:rules` ကို run ပြီး publish လုပ်ပါ။",
+    "domainNotAuthorised": "PIN မှန်ပါသည်၊ သို့သော် Firebase က ဤဝက်ဘ်ဆိုက်၏ လိပ်စာကို မသိပါ။ Firebase Console → Authentication → Settings → Authorized domains → Add domain တွင် browser မှာပေါ်နေသော လိပ်စာကို ထည့်ပါ။",
+    "badApiKey": "ဤ build ထဲက Firebase key မှားနေသည် သို့မဟုတ် မပါပါ။ hosting ရဲ့ environment variables ထဲက VITE_FIREBASE_API_KEY ကို Firebase Console → Project settings နှင့် တိုက်စစ်ပြီး ပြန် deploy လုပ်ပါ။"
   },
   "admin": {
     "title": "ချိန်မှတ်စနစ်",

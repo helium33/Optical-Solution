@@ -286,6 +286,10 @@ function errorKeyFor(reason) {
       return 'errors.noServer';
     case 'rules-not-published':
       return 'errors.rulesNotPublished';
+    case 'domain-not-authorised':
+      return 'errors.domainNotAuthorised';
+    case 'bad-api-key':
+      return 'errors.badApiKey';
     default:
       return 'errors.wrongBranchPin';
   }
