@@ -1,7 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  createUserWithEmailAndPassword,
   getRedirectResult,
   onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
   signOut as firebaseSignOut,
@@ -39,6 +43,14 @@ export const AUTH_STATUS = {
   KIOSK: 'kiosk',
   /** Signed in with Google successfully, but not an administrator. */
   REJECTED: 'rejected',
+  /**
+   * An allowlisted administrator whose email address Firebase has not seen
+   * confirmed. Only reachable through email-and-password signup — Google hands
+   * back an already-verified address — and deliberately NOT treated as
+   * authenticated, because the rules check `email_verified` and this session
+   * would load the dashboard and then be refused every single read.
+   */
+  UNVERIFIED: 'unverified',
   MISCONFIGURED: 'misconfigured',
 };
 
@@ -52,9 +64,13 @@ export function AuthProvider({ children }) {
   /**
    * WHY the sign-in failed, not just what happened.
    *
-   *   'rejected' — Google sign-in worked; this account is not an administrator.
-   *   'failed'   — sign-in itself did not happen: provider disabled, popup
-   *                blocked, bad key, no network.
+   *   'rejected'         — Google sign-in worked; this account is not an
+   *                        administrator. The fix is to switch Google account.
+   *   'rejected-address' — an address typed into the password form is not on
+   *                        the allowlist. Nothing was signed in, so there is no
+   *                        account to switch; the fix is to type another one.
+   *   'failed'           — sign-in itself did not happen: provider disabled,
+   *                        popup blocked, bad key, no network.
    *
    * These were one undifferentiated string, so a Firebase project with the
    * Google provider switched off told the owner "Not an administrator" and
@@ -69,93 +85,112 @@ export function AuthProvider({ children }) {
     setError(message);
   };
 
+  /**
+   * What a Firebase user means for this app.
+   *
+   * Lifted out of the auth listener because `recheckVerification` has to reach
+   * the same verdict after reloading the account, and a second copy of this
+   * ladder would drift from the first one within a week.
+   */
+  const applyUser = useCallback(async (nextUser) => {
+    if (!nextUser) {
+      setUser(null);
+      setClaims(null);
+      setStatus(
+        rejectedEmail.current ? AUTH_STATUS.REJECTED : AUTH_STATUS.ANONYMOUS,
+      );
+      return;
+    }
+
+    const token = await nextUser.getIdTokenResult().catch(() => null);
+
+    /* A kiosk signs in with a custom token and has no email. It is a valid
+       identity, just not an administrator — checking the allowlist first
+       would sign the shop tablet straight back out. */
+    if (token?.claims?.kiosk === true) {
+      rejectedEmail.current = null;
+      setErrorKind(null);
+      setError(null);
+      setClaims(token.claims);
+      setUser(nextUser);
+      setStatus(AUTH_STATUS.KIOSK);
+      return;
+    }
+
+    /* A development kiosk: signed in anonymously because verifyBranchPin is
+       not deployed to mint the branch-scoped custom token the check above
+       looks for. It has no claims and no email, so the allowlist check below
+       would call it a rejected admin and sign it out — which is precisely
+       what happened: the tablet unlocked, navigated to the roster, and was
+       signed out between the two. Every read then went out unauthenticated
+       and Firestore refused it, so a correct ruleset still produced
+       "Missing or insufficient permissions" and no amount of republishing
+       could fix it.
+
+       An anonymous session is a real identity and deliberately not an
+       administrator, which is what KIOSK already means here. It carries no
+       branchId, so `kioskBranchId` stays null and rules cannot scope it to
+       one shop — the honest limitation of running without the Functions. */
+    if (nextUser.isAnonymous) {
+      rejectedEmail.current = null;
+      setErrorKind(null);
+      setError(null);
+      setClaims(token?.claims ?? null);
+      setUser(nextUser);
+      setStatus(AUTH_STATUS.KIOSK);
+      return;
+    }
+
+    if (!isAllowlistedAdmin(nextUser.email)) {
+      rejectedEmail.current = nextUser.email;
+      setErrorKind('rejected');
+      setError(
+        `${nextUser.email} is not an administrator account for Optical Solution.`,
+      );
+      /* Do not leave a half-authenticated session lying around. */
+      await firebaseSignOut(auth).catch(() => {});
+      return;
+    }
+
+    rejectedEmail.current = null;
+    setErrorKind(null);
+    setError(null);
+    setClaims(token?.claims ?? null);
+
+    /* Allowlisted, but the address is unconfirmed. isAdmin() in the rules
+       reads `request.auth.token.email_verified == true`, so this session can
+       sign in perfectly and then be refused every read — a dashboard of
+       empty tables and console errors, with nothing on screen saying why.
+       The `admin` claim is the other way past isAdmin(), so a claim-holder
+       is let through unverified. */
+    if (!nextUser.emailVerified && token?.claims?.admin !== true) {
+      setUser(nextUser);
+      setStatus(AUTH_STATUS.UNVERIFIED);
+      return;
+    }
+
+    if (token && token.claims.admin !== true) {
+      /* Not fatal — rules may still allowlist by email — but it means the
+         claim-minting function has not run, and rules that check the claim
+         will deny. Worth saying out loud rather than debugging blind. */
+      console.warn(
+        '[auth] Signed in as an allowlisted admin, but the `admin` custom claim is missing. ' +
+          'Run the setAdminClaims function, then sign out and back in.',
+      );
+    }
+
+    setUser(nextUser);
+    setStatus(AUTH_STATUS.AUTHENTICATED);
+  }, []);
+
   useEffect(() => {
     if (!isFirebaseConfigured) return undefined;
 
     /* A redirect sign-in resolves here rather than in signIn(). */
     getRedirectResult(auth).catch((redirectError) => fail(toMessage(redirectError)));
 
-    const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
-      if (!nextUser) {
-        setUser(null);
-        setClaims(null);
-        setStatus(
-          rejectedEmail.current ? AUTH_STATUS.REJECTED : AUTH_STATUS.ANONYMOUS,
-        );
-        return;
-      }
-
-      const token = await nextUser.getIdTokenResult().catch(() => null);
-
-      /* A kiosk signs in with a custom token and has no email. It is a valid
-         identity, just not an administrator — checking the allowlist first
-         would sign the shop tablet straight back out. */
-      if (token?.claims?.kiosk === true) {
-        rejectedEmail.current = null;
-        setErrorKind(null);
-        setError(null);
-        setClaims(token.claims);
-        setUser(nextUser);
-        setStatus(AUTH_STATUS.KIOSK);
-        return;
-      }
-
-      /* A development kiosk: signed in anonymously because verifyBranchPin is
-         not deployed to mint the branch-scoped custom token the check above
-         looks for. It has no claims and no email, so the allowlist check below
-         would call it a rejected admin and sign it out — which is precisely
-         what happened: the tablet unlocked, navigated to the roster, and was
-         signed out between the two. Every read then went out unauthenticated
-         and Firestore refused it, so a correct ruleset still produced
-         "Missing or insufficient permissions" and no amount of republishing
-         could fix it.
-
-         An anonymous session is a real identity and deliberately not an
-         administrator, which is what KIOSK already means here. It carries no
-         branchId, so `kioskBranchId` stays null and rules cannot scope it to
-         one shop — the honest limitation of running without the Functions. */
-      if (nextUser.isAnonymous) {
-        rejectedEmail.current = null;
-        setErrorKind(null);
-        setError(null);
-        setClaims(token?.claims ?? null);
-        setUser(nextUser);
-        setStatus(AUTH_STATUS.KIOSK);
-        return;
-      }
-
-      if (!isAllowlistedAdmin(nextUser.email)) {
-        rejectedEmail.current = nextUser.email;
-        setErrorKind('rejected');
-        setError(
-          `${nextUser.email} is not an administrator account for Optical Solution.`,
-        );
-        /* Do not leave a half-authenticated session lying around. */
-        await firebaseSignOut(auth).catch(() => {});
-        return;
-      }
-
-      rejectedEmail.current = null;
-      setErrorKind(null);
-      setError(null);
-      setClaims(token?.claims ?? null);
-
-      if (token && token.claims.admin !== true) {
-        /* Not fatal — rules may still allowlist by email — but it means the
-           claim-minting function has not run, and rules that check the claim
-           will deny. Worth saying out loud rather than debugging blind. */
-        console.warn(
-          '[auth] Signed in as an allowlisted admin, but the `admin` custom claim is missing. ' +
-            'Run the setAdminClaims function, then sign out and back in.',
-        );
-      }
-
-      setUser(nextUser);
-      setStatus(AUTH_STATUS.AUTHENTICATED);
-    });
-
-    return unsubscribe;
-  }, []);
+    return onAuthStateChanged(auth, applyUser);
+  }, [applyUser]);
 
   const signIn = useCallback(async () => {
     if (!isFirebaseConfigured) {
@@ -183,6 +218,120 @@ export function AuthProvider({ children }) {
       fail(toMessage(popupError));
     }
   }, []);
+
+  /**
+   * Email and password, for the same four addresses Google sign-in admits.
+   *
+   * Refused here before Firebase is asked, when the address is not on the
+   * allowlist. That is a courtesy rather than a defence — the list ships in
+   * the bundle and anyone can edit it in devtools — but it is the difference
+   * between "that account cannot be an administrator here", said immediately,
+   * and a Firebase account that gets created, signs in happily, and then finds
+   * every read refused by rules with no explanation attached. The rules remain
+   * the only thing actually enforcing this.
+   */
+  const signInWithPassword = useCallback(async (email, password) => {
+    if (!isFirebaseConfigured) {
+      fail('Firebase is not configured. Copy .env.example to .env and fill it in.');
+      return false;
+    }
+    setErrorKind(null);
+    setError(null);
+    rejectedEmail.current = null;
+    try {
+      await authReady;
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      return true;
+    } catch (signInError) {
+      fail(toMessage(signInError, 'password'));
+      return false;
+    }
+  }, []);
+
+  const signUpWithPassword = useCallback(async (email, password) => {
+    if (!isFirebaseConfigured) {
+      fail('Firebase is not configured. Copy .env.example to .env and fill it in.');
+      return false;
+    }
+    const address = email.trim();
+    if (!isAllowlistedAdmin(address)) {
+      /* 'rejected-address', not 'rejected': the advice that goes with a
+         rejected Google sign-in is "switch Google accounts", which is useless
+         to somebody who just typed an address into a form. Same refusal,
+         different next step. */
+      setErrorKind('rejected-address');
+      setError(`${address} is not an administrator account for Optical Solution.`);
+      return false;
+    }
+    setErrorKind(null);
+    setError(null);
+    try {
+      await authReady;
+      const created = await createUserWithEmailAndPassword(auth, address, password);
+      /* The rules want `email_verified == true`, which a fresh password
+         account is not. Sending this now is what makes the account usable at
+         all rather than a dashboard that loads and reads nothing. */
+      await sendEmailVerification(created.user).catch(() => {});
+      return true;
+    } catch (signUpError) {
+      fail(toMessage(signUpError, 'password'));
+      return false;
+    }
+  }, []);
+
+  const resetPassword = useCallback(async (email) => {
+    setErrorKind(null);
+    setError(null);
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      return true;
+    } catch (resetError) {
+      fail(toMessage(resetError, 'password'));
+      return false;
+    }
+  }, []);
+
+  /** Re-send the verification mail for whoever is signed in but unverified. */
+  const resendVerification = useCallback(async () => {
+    if (!auth.currentUser) return false;
+    try {
+      await sendEmailVerification(auth.currentUser);
+      return true;
+    } catch (sendError) {
+      fail(toMessage(sendError, 'password'));
+      return false;
+    }
+  }, []);
+
+  /**
+   * "I have clicked the link" — re-ask Firebase instead of making someone sign
+   * out and back in, which is the only other way off the UNVERIFIED screen.
+   *
+   * Both calls are needed. `reload()` refreshes the user record; the ID TOKEN
+   * keeps its old `email_verified: false` for up to an hour, and that token is
+   * what Firestore rules actually see. Without the forced refresh the screen
+   * would clear and every read would still be denied.
+   */
+  const recheckVerification = useCallback(async () => {
+    const current = auth.currentUser;
+    if (!current) return false;
+    /* Both in try/catch rather than `.catch()`: a cancelled network call
+       rejects, but a user object without the method at all (the preview stub)
+       throws synchronously, and `.catch()` on the undefined return value would
+       throw a second time inside the handler. */
+    try {
+      await current.reload?.();
+    } catch {
+      /* Offline, or the account is gone. applyUser below reports it. */
+    }
+    try {
+      await current.getIdToken?.(true);
+    } catch {
+      /* Same. The stale token still gets re-read. */
+    }
+    await applyUser(auth.currentUser);
+    return auth.currentUser?.emailVerified === true;
+  }, [applyUser]);
 
   const signOut = useCallback(async () => {
     rejectedEmail.current = null;
@@ -215,36 +364,90 @@ export function AuthProvider({ children }) {
       error,
       errorKind,
       signIn,
+      signInWithPassword,
+      signUpWithPassword,
+      resetPassword,
+      resendVerification,
+      recheckVerification,
       signOut,
       allowlist: ADMIN_EMAILS,
       isLoading: status === AUTH_STATUS.LOADING,
       isAuthenticated: status === AUTH_STATUS.AUTHENTICATED,
       isKiosk: status === AUTH_STATUS.KIOSK,
+      needsVerification: status === AUTH_STATUS.UNVERIFIED,
       kioskBranchId: status === AUTH_STATUS.KIOSK ? (claims?.branchId ?? null) : null,
     }),
-    [status, user, principal, claims, error, errorKind, signIn, signOut],
+    [
+      status,
+      user,
+      principal,
+      claims,
+      error,
+      errorKind,
+      signIn,
+      signInWithPassword,
+      signUpWithPassword,
+      resetPassword,
+      resendVerification,
+      recheckVerification,
+      signOut,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-function toMessage(error) {
+function toMessage(error, provider = 'google') {
   const code = error?.code ?? '';
-  if (code === 'auth/operation-not-allowed') {
+  if (code === 'auth/operation-not-allowed' || code === 'auth/admin-restricted-operation') {
     /* The single most likely cause on a fresh project, and the one that used
-       to masquerade as "you used the wrong account". */
-    return 'Google sign-in is not switched on for this Firebase project. Enable it in Authentication → Sign-in method → Google, then try again.';
+       to masquerade as "you used the wrong account". Which provider to switch
+       on depends on which form was used, so the caller says. */
+    const name = provider === 'password' ? 'Email/Password' : 'Google';
+    return `${name} sign-in is not switched on for this Firebase project. Enable it in Authentication → Sign-in method → ${name}, then try again.`;
   }
   if (code === 'auth/popup-blocked') {
     return 'The browser blocked the sign-in window. Allow pop-ups for this site, or try again — it will fall back to a redirect.';
   }
   if (code === 'auth/network-request-failed') return 'No connection. Check the network and try again.';
   if (code === 'auth/unauthorized-domain') {
-    return 'This domain is not in the Firebase Auth authorised list. Add it in Authentication → Settings.';
+    /* The address is printed rather than described. "Add this domain" sends
+       someone to the browser bar to retype a hostname that may be a deploy
+       preview, a www prefix, or a custom domain they forgot they set — and one
+       wrong character reads exactly like having done nothing at all. Firebase
+       wants the bare host, so that is what is shown, ready to copy. */
+    const host = typeof window === 'undefined' ? '' : window.location.hostname;
+    return (
+      `Firebase does not recognise this website's address. Copy it exactly — ${host} — ` +
+      'and add it in Firebase Console → Authentication → Settings → Authorized domains → ' +
+      'Add domain. No https://, no slash. Then reload this page; no redeploy is needed.'
+    );
   }
   if (code === 'auth/invalid-api-key' || code === 'auth/api-key-not-valid') {
     return 'The Firebase API key is wrong. Check VITE_FIREBASE_API_KEY.';
   }
+  if (code === 'auth/email-already-in-use') {
+    return 'That address already has a password. Use Sign in rather than Create account — or Forgot password if you do not remember it.';
+  }
+  /* Firebase stopped distinguishing "no such account" from "wrong password" on
+     purpose, so that a stranger cannot use the sign-in form to find out which
+     addresses exist. The message has to cover both without guessing. */
+  if (
+    code === 'auth/invalid-credential' ||
+    code === 'auth/wrong-password' ||
+    code === 'auth/user-not-found'
+  ) {
+    return 'That email and password do not match an account. If this is your first time, use Create account.';
+  }
+  if (code === 'auth/invalid-email') return 'That does not look like an email address.';
+  if (code === 'auth/weak-password') {
+    return 'Firebase needs a password of at least 6 characters.';
+  }
+  if (code === 'auth/missing-password') return 'Type a password.';
+  if (code === 'auth/too-many-requests') {
+    return 'Too many attempts from this device. Wait a few minutes, or use Forgot password.';
+  }
+  if (code === 'auth/user-disabled') return 'That account has been disabled in Firebase.';
   return error?.message ?? 'Sign-in failed.';
 }
 

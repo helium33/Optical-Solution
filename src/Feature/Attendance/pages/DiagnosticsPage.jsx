@@ -257,6 +257,11 @@ export default function DiagnosticsPage() {
       {/* ---- which project ---- */}
       <Section title="1. Which Firebase project is this bundle pointed at?">
         <KeyValue k="VITE_FIREBASE_PROJECT_ID" v={projectId} />
+        {/* Google sign-in only works from a host on Firebase's authorised
+            list, and the commonest reason it is not on the list is that the
+            real host is not the one the reader assumed — a deploy preview, a
+            www prefix, a custom domain. Print it rather than ask. */}
+        <KeyValue k="this page's address" v={typeof window === 'undefined' ? '—' : window.location.hostname} />
         <p className="mt-2 text-xs text-ink-subtle">
           Open Firebase Console and confirm the project selector in the top-left reads exactly
           this. A rules change published to the wrong project changes nothing here.

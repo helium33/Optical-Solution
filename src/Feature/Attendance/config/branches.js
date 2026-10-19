@@ -38,6 +38,9 @@ export const DEFAULT_MAX_ACCURACY_METERS = 65;
 export const BRANCHES = {
   win: {
     id: 'win',
+    /* Swap the shop's real artwork in at this path — the picker falls
+       back to the themed swatch if the file is missing. */
+    logo: '/branches/win.svg',
     name: 'Win Vision',
     shortName: 'Win',
     theme: 'win',
@@ -72,6 +75,9 @@ export const BRANCHES = {
 
   pwint: {
     id: 'pwint',
+    /* Swap the shop's real artwork in at this path — the picker falls
+       back to the themed swatch if the file is missing. */
+    logo: '/branches/pwint.svg',
     name: 'Pwint Eyewear',
     shortName: 'Pwint',
     theme: 'pwint',
@@ -97,6 +103,9 @@ export const BRANCHES = {
 
   yangon: {
     id: 'yangon',
+    /* Swap the shop's real artwork in at this path — the picker falls
+       back to the themed swatch if the file is missing. */
+    logo: '/branches/yangon.svg',
     name: 'Yangon Eyewear',
     shortName: 'Yangon',
     theme: 'yangon',

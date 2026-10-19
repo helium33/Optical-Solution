@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Pwint Eyewear">
+  <rect width="96" height="96" rx="22" fill="#FDF2F7"/>
+  <!-- The cherry blossom from the shop's wordmark, where it replaces the dot
+       on the "i": five petals around a paler centre. -->
+  <g transform="translate(48 44)">
+    <g fill="#E5427F">
+      <ellipse rx="9" ry="14" cy="-15"/>
+      <ellipse rx="9" ry="14" cy="-15" transform="rotate(72)"/>
+      <ellipse rx="9" ry="14" cy="-15" transform="rotate(144)"/>
+      <ellipse rx="9" ry="14" cy="-15" transform="rotate(216)"/>
+      <ellipse rx="9" ry="14" cy="-15" transform="rotate(288)"/>
+    </g>
+    <circle r="7" fill="#F7A8C8"/>
+  </g>
+  <!-- glasses, as in the mark -->
+  <g stroke="#C9236A" stroke-width="3.5" fill="none">
+    <circle cx="36" cy="79" r="8"/>
+    <circle cx="60" cy="79" r="8"/>
+    <path d="M44 79 h8"/>
+  </g>
+</svg>

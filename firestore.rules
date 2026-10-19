@@ -83,6 +83,7 @@ service cloud.firestore {
           && claims().email.lower() in [
             'kyawwinhtun564@gmail.com',
             'wpy.muse@gmail.com',
+            'wpymuse@gmail.com',
             'yannaing190792@gmail.com'
           ]
         )

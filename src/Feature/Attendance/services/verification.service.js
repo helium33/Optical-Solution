@@ -52,6 +52,33 @@ const withTimeout = (promise, ms = CALL_TIMEOUT_MS) =>
 export const DEV_FALLBACK = import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true';
 
 /**
+ * Why an anonymous sign-in was refused, in terms someone can act on.
+ *
+ * Everything that was not "Anonymous is switched off" used to come back as one
+ * generic "cannot reach the server", which is a sentence about the network for
+ * three failures that have nothing to do with the network and each have a
+ * different fix. They surface the first time a build is put on a real domain,
+ * which is exactly when the reader has least idea where to look:
+ *
+ *   unauthorized-domain  the site's address is not on Firebase's list
+ *   api-key-not-valid    the key in this build is wrong or missing — on a
+ *                        hosted build that means the environment variable
+ *   network-request-failed  genuinely blocked or offline
+ *
+ * Firebase is inconsistent about which code it raises for a disabled Anonymous
+ * provider, hence the two spellings — see firebase/flutterfire#2935.
+ */
+const anonymousFailure = (error) => {
+  const code = String(error?.code ?? '');
+  if (code === 'auth/operation-not-allowed' || code === 'auth/admin-restricted-operation') {
+    return 'anonymous-disabled';
+  }
+  if (code === 'auth/unauthorized-domain') return 'domain-not-authorised';
+  if (code.startsWith('auth/api-key') || code === 'auth/invalid-api-key') return 'bad-api-key';
+  return 'sign-in-failed';
+};
+
+/**
  * Development PINs, per branch.
  *
  * `VITE_DEV_BRANCH_PINS=win:1111,pwint:2222,yangon:3333` gives each shop its
@@ -121,20 +148,14 @@ export async function unlockKiosk(branchId, pin) {
       try {
         await signInAnonymously(auth);
       } catch (anonError) {
-        /* Same "not enabled" condition, two different codes: Firebase's own
-           SDKs are inconsistent about which one they raise when Anonymous is
-           switched off, and a real project surfaced the second one — see
-           https://github.com/firebase/flutterfire/issues/2935. Reason is
-           distinct from the generic 'unavailable' below (a signInAnonymously
-           failure means the PIN already matched; that is worth telling apart
-           on the diagnostics page from a request that never got that far). */
-        if (
-          anonError?.code === 'auth/operation-not-allowed'
-          || anonError?.code === 'auth/admin-restricted-operation'
-        ) {
-          return { ok: false, reason: 'anonymous-disabled' };
-        }
-        return { ok: false, reason: 'sign-in-failed', message: anonError?.message };
+        /* Told apart from the generic 'unavailable' below on purpose: reaching
+           here means the PIN already matched, which is worth distinguishing on
+           the diagnostics page from a request that never got that far. */
+        return {
+          ok: false,
+          reason: anonymousFailure(anonError),
+          message: anonError?.message,
+        };
       }
       return { ok: true, ttlMinutes: 840, dev: true };
     }
@@ -201,13 +222,7 @@ export async function unlockWithStaffPin(branchId, pin) {
     try {
       await signInAnonymously(auth);
     } catch (error) {
-      if (
-        error?.code === 'auth/operation-not-allowed'
-        || error?.code === 'auth/admin-restricted-operation'
-      ) {
-        return { ok: false, reason: 'anonymous-disabled' };
-      }
-      return { ok: false, reason: 'sign-in-failed', message: error?.message };
+      return { ok: false, reason: anonymousFailure(error), message: error?.message };
     }
   }
 
