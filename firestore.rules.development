@@ -47,6 +47,7 @@ service cloud.firestore {
           && request.auth.token.email.lower() in [
             'kyawwinhtun564@gmail.com',
             'wpy.muse@gmail.com',
+            'wpymuse@gmail.com',
             'yannaing190792@gmail.com'
           ]
         )

@@ -16,7 +16,15 @@
 
 export const ADMIN_EMAILS = Object.freeze([
   'kyawwinhtun564@gmail.com',
+  /* Both spellings of the same mailbox. Gmail ignores dots, so these two
+     addresses deliver to one inbox — but Firebase hands back whichever
+     spelling the Google account is registered under, and every check
+     here and in the rules is an exact string match. Listing one of them
+     locks the owner out of their own dashboard with "not an
+     administrator", which reads like the wrong account rather than a
+     punctuation mismatch. */
   'wpy.muse@gmail.com',
+  'wpymuse@gmail.com',
   'yannaing190792@gmail.com',
 ]);
 
