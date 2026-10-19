@@ -118,6 +118,9 @@ const PREVIEW_ADMIN = {
   displayName: 'Preview admin',
   photoURL: null,
   isAnonymous: false,
+  emailVerified: true,
+  reload: async () => {},
+  getIdToken: async () => 'preview-token',
   getIdTokenResult: async () => ({
     claims: { admin: true, email: 'kyawwinhtun564@gmail.com', email_verified: true },
   }),
@@ -173,6 +176,78 @@ export const signInAnonymously = async () => {
 export const signOut = async () => {
   currentUser = null;
   emitAuth();
+};
+
+/* ───────────────────────── email and password ──────────────────────────── *
+ * Enough of a password provider to walk both screens: signing in as an
+ * existing admin, and creating an account that is not yet confirmed.
+ *
+ * Accounts live in a Map for the life of the tab. Nothing is persisted, which
+ * is the point — a published preview bundle must not accumulate credentials.  */
+
+const passwordAccounts = new Map();
+
+const asPasswordUser = (email) => ({
+  uid: `preview-${email}`,
+  email,
+  displayName: email,
+  photoURL: null,
+  isAnonymous: false,
+  get emailVerified() {
+    return passwordAccounts.get(email)?.emailVerified === true;
+  },
+  /* The preview has no mailbox, so the link cannot really be clicked. Rather
+     than dead-ending on the verification screen, a reload after the mail was
+     "sent" confirms the address and says so in the console. The real SDK
+     reports whatever Firebase actually knows. */
+  reload: async () => {
+    const account = passwordAccounts.get(email);
+    if (account?.verificationSent && !account.emailVerified) {
+      account.emailVerified = true;
+      console.info(
+        '[preview] No mailbox here, so the confirmation link is treated as clicked. ' +
+          'Against a real Firebase project the address stays unconfirmed until it is opened.',
+      );
+    }
+  },
+  getIdToken: async () => 'preview-token',
+  getIdTokenResult: async () => ({
+    claims: { email, email_verified: passwordAccounts.get(email)?.emailVerified === true },
+  }),
+});
+
+const authError = (code) => {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+};
+
+export const createUserWithEmailAndPassword = async (auth, email, password) => {
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  if (passwordAccounts.has(email)) throw authError('auth/email-already-in-use');
+  if (!password || password.length < 6) throw authError('auth/weak-password');
+  passwordAccounts.set(email, { password, emailVerified: false, verificationSent: false });
+  currentUser = asPasswordUser(email);
+  emitAuth();
+  return { user: currentUser };
+};
+
+export const signInWithEmailAndPassword = async (auth, email, password) => {
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const account = passwordAccounts.get(email);
+  if (!account || account.password !== password) throw authError('auth/invalid-credential');
+  currentUser = asPasswordUser(email);
+  emitAuth();
+  return { user: currentUser };
+};
+
+export const sendEmailVerification = async (user) => {
+  const account = passwordAccounts.get(user?.email);
+  if (account) account.verificationSent = true;
+};
+
+export const sendPasswordResetEmail = async (auth, email) => {
+  if (!email || !email.includes('@')) throw authError('auth/invalid-email');
 };
 
 /* ────────────────────────── firebase/firestore ────────────────────────── */
