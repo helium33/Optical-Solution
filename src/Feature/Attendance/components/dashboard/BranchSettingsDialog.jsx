@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LuSettings, LuCircleCheck, LuInfo, LuMapPin } from 'react-icons/lu';
+import { LuSettings, LuCircleCheck, LuInfo, LuMapPin, LuCrosshair } from 'react-icons/lu';
 
 import Modal from '../ui/Modal';
 import Spinner from '../ui/Spinner';
 import { updateBranchShift, updateBranchGeofence } from '../../services/branches.service';
 import { shiftWindow, formatDuration } from '../../lib/time';
+import { haversineMeters, formatDistance } from '../../lib/geo';
+import { parseLocationInput } from '../../lib/plusCode';
 
 /**
  * Edit a branch's shift, grace windows and geofence.
@@ -32,6 +34,9 @@ export default function BranchSettingsDialog({ open, onClose, branch, actor, onS
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
+  /** One field for the shop pin: a Plus Code or a pair of decimals. */
+  const [pinText, setPinText] = useState('');
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
     if (!open || !branch) return;
@@ -45,6 +50,10 @@ export default function BranchSettingsDialog({ open, onClose, branch, actor, onS
       maxOvertimeMinutes: branch.shift.maxOvertimeMinutes ?? 300,
       radiusMeters: branch.geofence.radiusMeters ?? 50,
     });
+    /* Pre-filled with the pin already in force, so the field shows what is
+       true rather than an empty box that looks like nothing is set. */
+    setPinText(branch.geofence.plusCode || `${branch.geofence.lat}, ${branch.geofence.lng}`);
+    setLocating(false);
     setError(null);
     setSaved(false);
   }, [open, branch]);
@@ -52,6 +61,62 @@ export default function BranchSettingsDialog({ open, onClose, branch, actor, onS
   const set = (patch) => {
     setForm((current) => ({ ...current, ...patch }));
     setSaved(false);
+  };
+
+  /* The branch's existing pin is the reference a short Plus Code is expanded
+     against — "XWW2+45W" names a cell in every 1-degree block on Earth, and
+     the nearest sensible one is the shop we are already editing. */
+  const parsedPin = useMemo(
+    () => parseLocationInput(pinText, branch?.geofence ?? null),
+    [pinText, branch],
+  );
+
+  /** How far this edit would move the shop. The number people actually need. */
+  const pinMoveMeters = useMemo(() => {
+    if (!parsedPin || !branch) return null;
+    return haversineMeters(
+      { lat: branch.geofence.lat, lng: branch.geofence.lng },
+      { lat: parsedPin.lat, lng: parsedPin.lng },
+    );
+  }, [parsedPin, branch]);
+
+  /**
+   * Read the pin off this device.
+   *
+   * The intended use is standing in the shop doorway with the admin screen
+   * open, which is the only way to get a pin that is right rather than
+   * approximately right. The accuracy is shown rather than hidden, because a
+   * +/-800 m fix taken indoors would otherwise be saved looking authoritative.
+   */
+  const useMyLocation = () => {
+    if (!navigator.geolocation) {
+      setError('This browser cannot report a location.');
+      return;
+    }
+    setLocating(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      (fix) => {
+        setPinText(`${fix.coords.latitude.toFixed(7)}, ${fix.coords.longitude.toFixed(7)}`);
+        setLocating(false);
+        setSaved(false);
+        if (fix.coords.accuracy > 30) {
+          setError(
+            `That fix is only accurate to about ${Math.round(fix.coords.accuracy)} m. ` +
+              'Step outside the shop door and try again before saving it as the pin.',
+          );
+        }
+      },
+      (geoError) => {
+        setLocating(false);
+        setError(
+          geoError.code === geoError.PERMISSION_DENIED
+            ? 'Location access is blocked for this site. Allow it in the browser settings, then try again.'
+            : 'Could not read a location from this device right now.',
+        );
+      },
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+    );
   };
 
   /* What the settings add up to, recomputed live against the real function the
@@ -82,8 +147,11 @@ export default function BranchSettingsDialog({ open, onClose, branch, actor, onS
          shop and starts being a neighbourhood. */
       list.push('The radius must be between 20 and 500 metres.');
     }
+    if (pinText.trim() && !parsedPin) {
+      list.push('That is not a Plus Code or a pair of coordinates.');
+    }
     return list;
-  }, [form]);
+  }, [form, pinText, parsedPin]);
 
   const save = async () => {
     setBusy(true);
@@ -104,7 +172,17 @@ export default function BranchSettingsDialog({ open, onClose, branch, actor, onS
       );
       await updateBranchGeofence(
         branch.id,
-        { ...branch.geofence, radiusMeters: Number(form.radiusMeters) },
+        {
+          ...branch.geofence,
+          /* An unparseable field is caught by `problems` before save is
+             reachable, so falling back here means the field was left empty. */
+          lat: parsedPin ? parsedPin.lat : branch.geofence.lat,
+          lng: parsedPin ? parsedPin.lng : branch.geofence.lng,
+          /* Only meaningful while the pin came from a code. Clearing it stops
+             the screen showing a code that no longer names this spot. */
+          plusCode: parsedPin?.source === 'plus-code' ? pinText.trim() : null,
+          radiusMeters: Number(form.radiusMeters),
+        },
         actor?.uid,
       );
       setSaved(true);
@@ -127,7 +205,7 @@ export default function BranchSettingsDialog({ open, onClose, branch, actor, onS
       open={open}
       onClose={onClose}
       title={`${branch.name} settings`}
-      subtitle="Shift, grace windows and the attendance radius"
+      subtitle="Shift, grace windows and where the shop is"
       size="md"
     >
       <div className="space-y-5">
@@ -210,16 +288,72 @@ export default function BranchSettingsDialog({ open, onClose, branch, actor, onS
         </Section>
 
         {/* ---- geofence ---- */}
-        <Section title="Attendance radius" icon={LuMapPin}>
-          <NumberField
-            id="radius" label="Must be within" suffix="m"
-            value={form.radiusMeters} onChange={(v) => set({ radiusMeters: v })}
-          />
-          <Explain>
-            Measured from {branch.geofence.lat.toFixed(6)}, {branch.geofence.lng.toFixed(6)}.
-            Below about 20 m you are inside ordinary GPS error and staff will be refused at the
-            door.
-          </Explain>
+        <Section title="Shop location" icon={LuMapPin}>
+          <label htmlFor="pin" className="block">
+            <span className="mb-1.5 block text-xs font-semibold text-ink-muted">
+              Plus Code or coordinates
+            </span>
+            <div className="flex gap-2">
+              <input
+                id="pin"
+                value={pinText}
+                onChange={(event) => {
+                  setPinText(event.target.value);
+                  setSaved(false);
+                }}
+                placeholder="XWW2+45W, Muse"
+                spellCheck={false}
+                autoComplete="off"
+                className="min-w-0 flex-1 rounded-2xl border border-line bg-surface-card px-4 py-3 text-[15px] text-ink outline-none transition focus:border-brand-600 focus:ring-2 focus:ring-brand-600/25"
+              />
+              <button
+                type="button"
+                onClick={useMyLocation}
+                disabled={locating}
+                title="Read the pin from this device"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-line px-3 py-3 text-xs font-semibold text-ink-muted transition hover:bg-surface-sunken disabled:opacity-50 tap-none"
+              >
+                <LuCrosshair className="h-4 w-4" aria-hidden="true" />
+                {locating ? 'Reading…' : 'Here'}
+              </button>
+            </div>
+          </label>
+
+          {/* What was understood, and what it would change. A pin that silently
+              reinterprets a typo as somewhere else entirely is the failure this
+              read-out exists to prevent. */}
+          {parsedPin ? (
+            <Explain>
+              Read as {parsedPin.source === 'plus-code' ? 'a Plus Code' : 'coordinates'} →{' '}
+              <strong>{parsedPin.lat.toFixed(7)}, {parsedPin.lng.toFixed(7)}</strong>.{' '}
+              {pinMoveMeters !== null && pinMoveMeters >= 1 ? (
+                <>Saving moves the shop <strong>{formatDistance(pinMoveMeters)}</strong> from where
+                  it is pinned now.</>
+              ) : (
+                <>This is where the shop is pinned now.</>
+              )}
+            </Explain>
+          ) : (
+            <Explain>
+              Paste the code straight from Google Maps, or stand in the doorway and press
+              <strong> Here</strong>. Pinned now at{' '}
+              <strong>{branch.geofence.lat.toFixed(6)}, {branch.geofence.lng.toFixed(6)}</strong>.
+            </Explain>
+          )}
+
+          <div className="mt-3">
+            <NumberField
+              id="radius" label="Staff must be within" suffix="m"
+              value={form.radiusMeters} onChange={(v) => set({ radiusMeters: v })}
+            />
+            <Explain>
+              Measured from the pin above. Below about 20 m you are inside ordinary GPS error and
+              staff will be refused at the door.{' '}
+              {branch.network?.allowedCidrs?.length
+                ? 'This branch also requires the shop Wi-Fi.'
+                : 'Any network is fine — mobile data included. Location is the only check.'}
+            </Explain>
+          </div>
         </Section>
 
         {/* ---- the reassurance that matters ---- */}

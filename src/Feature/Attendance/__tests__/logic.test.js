@@ -23,7 +23,14 @@ import {
 } from '../lib/time';
 import { workingDaysInMonth, summariseMonth } from '../lib/monthly';
 import { formatMonth } from '../i18n/months';
-import { BRANCHES } from '../config/branches';
+import { BRANCHES, BRANCH_PINS } from '../config/branches';
+import {
+  decodePlusCode,
+  recoverPlusCode,
+  parseLocationInput,
+  isFullPlusCode,
+  isPlusCodeish,
+} from '../lib/plusCode';
 
 let passed = 0;
 let failed = 0;
@@ -183,9 +190,14 @@ test('ipMatchesAny scans the whole allowlist', () => {
 });
 
 test('evaluateNetwork distinguishes match / mismatch / unknown / skipped', () => {
-  assert.equal(evaluateNetwork('203.81.64.5', WIN.network).verdict, NETWORK.MATCH);
-  assert.equal(evaluateNetwork('1.2.3.4', WIN.network).verdict, NETWORK.MISMATCH);
-  assert.equal(evaluateNetwork(null, WIN.network).verdict, NETWORK.UNKNOWN);
+  /* A fixture rather than a branch record. The shops no longer restrict by
+     network, and hanging this off BRANCHES.win meant that policy change would
+     have quietly deleted the coverage for the function itself — which still
+     has to work for whoever re-enables a CIDR later. */
+  const restricted = { allowedCidrs: ['203.81.64.0/20'], enforce: true };
+  assert.equal(evaluateNetwork('203.81.64.5', restricted).verdict, NETWORK.MATCH);
+  assert.equal(evaluateNetwork('1.2.3.4', restricted).verdict, NETWORK.MISMATCH);
+  assert.equal(evaluateNetwork(null, restricted).verdict, NETWORK.UNKNOWN);
   assert.equal(evaluateNetwork('1.2.3.4', { allowedCidrs: [] }).verdict, NETWORK.SKIPPED);
 });
 
@@ -526,6 +538,124 @@ test('MONTHLY: the month heading is Burmese without trusting browser ICU', () =>
   assert.equal(formatMonth('2026-09', 'my'), 'စက်တင်ဘာ 2026');
   assert.equal(formatMonth('2026-01', 'my-MM'), 'ဇန်နဝါရီ 2026');
   assert.equal(formatMonth('2026-12', 'en'), 'December 2026');
+});
+
+/* ============================ plus codes =============================== */
+
+/* The reference locality the shop codes were quoted against. A short code
+   names a cell in every 1-degree block on Earth; this says which one. */
+const MUSE = { lat: 23.995407, lng: 97.900507 };
+
+test('PLUSCODE: a full code decodes to the published cell centre', () => {
+  /* Google's decoding.csv row for this code:
+       7FG49QCJ+2VX,11,20.3701,2.78221875,20.370125,2.78225
+     so the cell centre is the midpoint of those bounds. */
+  const area = decodePlusCode('7FG49QCJ+2VX');
+  assert.ok(Math.abs(area.lat - (20.3701 + 20.370125) / 2) < 1e-9, `lat ${area.lat}`);
+  assert.ok(Math.abs(area.lng - (2.78221875 + 2.78225) / 2) < 1e-9, `lng ${area.lng}`);
+});
+
+test('PLUSCODE: grid rows and columns are not interchangeable', () => {
+  /* 5 north-south, 4 east-west. Swapping them yields a plausible-looking code
+     that lands tens of metres away, which is the whole bug class this guards. */
+  const a = decodePlusCode('7MMVXWW2+45W');
+  const b = decodePlusCode('7MMVXWW2+45X');
+  assert.ok(a.lat !== b.lat || a.lng !== b.lng);
+  assert.ok(Math.abs(a.latSpan - 1 / 8000 / 5) < 1e-12, `latSpan ${a.latSpan}`);
+  assert.ok(Math.abs(a.lngSpan - 1 / 8000 / 4) < 1e-12, `lngSpan ${a.lngSpan}`);
+});
+
+test('PLUSCODE: a short code is recovered against a nearby reference', () => {
+  const area = recoverPlusCode('XWW2+45W', MUSE);
+  assert.ok(Math.abs(area.lat - BRANCH_PINS.pwint.lat) < 1e-7, `lat ${area.lat}`);
+  assert.ok(Math.abs(area.lng - BRANCH_PINS.pwint.lng) < 1e-7, `lng ${area.lng}`);
+});
+
+test('PLUSCODE: the shop codes resolve to the pins in the config', () => {
+  /* The config stores decimals; these are the codes they came from. If someone
+     edits one without the other, this is what notices. */
+  for (const [id, short] of [
+    ['win', 'XVVX+GW3'],
+    ['pwint', 'XWW2+45W'],
+    ['yangon', 'XWW2+QJC'],
+  ]) {
+    const area = recoverPlusCode(short, MUSE);
+    assert.ok(
+      Math.abs(area.lat - BRANCHES[id].geofence.lat) < 1e-7 &&
+        Math.abs(area.lng - BRANCHES[id].geofence.lng) < 1e-7,
+      `${id}: code gives ${area.lat},${area.lng} but config has ${BRANCHES[id].geofence.lat},${BRANCHES[id].geofence.lng}`,
+    );
+  }
+});
+
+test('PLUSCODE: the locality suffix people actually paste is tolerated', () => {
+  const withComma = recoverPlusCode('XWW2+45W, Muse', MUSE);
+  const withSpace = recoverPlusCode('XWW2+45W Muse', MUSE);
+  const bare = recoverPlusCode('XWW2+45W', MUSE);
+  assert.equal(withComma.lat, bare.lat);
+  assert.equal(withSpace.lat, bare.lat);
+  assert.equal(withComma.lng, bare.lng);
+});
+
+test('PLUSCODE: full and short codes are told apart', () => {
+  assert.equal(isFullPlusCode('7MMVXWW2+45W'), true);
+  assert.equal(isFullPlusCode('XWW2+45W'), false);
+  assert.equal(isPlusCodeish('XWW2+45W'), true);
+  assert.equal(isPlusCodeish('23.99, 97.90'), false);
+  /* 'A' and 'B' are not in the alphabet — a typo must not become a location. */
+  assert.equal(isPlusCodeish('XWWA+45B'), false);
+});
+
+test('PLUSCODE: one field takes either a code or decimals', () => {
+  const code = parseLocationInput('XWW2+45W, Muse', MUSE);
+  assert.equal(code.source, 'plus-code');
+  assert.ok(Math.abs(code.lat - BRANCH_PINS.pwint.lat) < 1e-7);
+
+  const decimals = parseLocationInput('23.9953625, 97.9004531', MUSE);
+  assert.equal(decimals.source, 'coordinates');
+  assert.equal(decimals.lat, 23.9953625);
+
+  assert.equal(parseLocationInput('', MUSE), null);
+  assert.equal(parseLocationInput('not a place', MUSE), null);
+  /* Out of range must be refused, not clamped into somewhere real. */
+  assert.equal(parseLocationInput('99, 200', MUSE), null);
+});
+
+/* ========================= branch geofences ============================ */
+
+test('BRANCHES: every shop has its own pin, 50 m, and no network rule', () => {
+  for (const id of ['win', 'pwint', 'yangon']) {
+    const { geofence, network } = BRANCHES[id];
+    assert.ok(Number.isFinite(geofence.lat) && Number.isFinite(geofence.lng), id);
+    assert.equal(geofence.radiusMeters, 50, `${id} radius`);
+    /* "Any network" is an empty allowlist — the configured not-applicable
+       path, which makes useGeoFence skip the IP lookup altogether. */
+    assert.deepEqual(network.allowedCidrs, [], `${id} allowlist`);
+    assert.equal(network.enforce, false, `${id} enforce`);
+    assert.equal(evaluateNetwork(null, network).verdict, NETWORK.SKIPPED, id);
+    assert.equal(evaluateNetwork('8.8.8.8', network).verdict, NETWORK.SKIPPED, id);
+  }
+});
+
+test('BRANCHES: the three 50 m fences do not overlap', () => {
+  /* While all three shared a pin, standing in one shop satisfied the fence for
+     all of them. Two radii must not reach each other. */
+  const ids = ['win', 'pwint', 'yangon'];
+  for (let i = 0; i < ids.length; i += 1) {
+    for (let j = i + 1; j < ids.length; j += 1) {
+      const a = BRANCHES[ids[i]].geofence;
+      const b = BRANCHES[ids[j]].geofence;
+      const gap = haversineMeters(a, b) - a.radiusMeters - b.radiusMeters;
+      assert.ok(gap > 0, `${ids[i]} and ${ids[j]} overlap by ${Math.round(-gap)} m`);
+    }
+  }
+});
+
+test('BRANCHES: standing at one shop fails the other two fences', () => {
+  const atPwint = { latitude: BRANCH_PINS.pwint.lat, longitude: BRANCH_PINS.pwint.lng, accuracy: 12 };
+  assert.equal(evaluateFence(atPwint, BRANCHES.pwint.geofence).verdict, FENCE.INSIDE);
+  assert.equal(evaluateFence(atPwint, BRANCHES.win.geofence).verdict, FENCE.OUTSIDE);
+  assert.equal(evaluateFence(atPwint, BRANCHES.yangon.geofence).verdict, FENCE.OUTSIDE);
 });
 
 /* ============================= report ================================= */
