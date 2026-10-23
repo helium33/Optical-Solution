@@ -8,6 +8,7 @@ import { BRANCH_LIST, BRANCHES } from '../../config/branches';
 import { STAFF_ROLE_ORDER, ROLE_META, roleLabel } from '../../config/roles';
 import { createStaff, setStaffPin } from '../../services/staff.service';
 import { ADMIN_SEQUENCE } from '../../services/adminReveal';
+import { findStaffWithPin } from '../../services/verification.service';
 
 /**
  * Add an employee.
@@ -77,6 +78,18 @@ export default function AddStaffDialog({ open, onClose, branchId, actor, onAdded
     setBusy(true);
     setError(null);
     try {
+      /* Before the person exists, not after: a refused PIN must not leave a
+         half-created employee behind. The kiosk tells people apart by PIN
+         alone, so two people in one shop cannot share one. */
+      const clash = await findStaffWithPin(form.branchId, form.pin);
+      if (clash) {
+        setError(
+          `${clash.name} already uses this PIN at this branch. Each person needs their own, ` +
+            'or the kiosk cannot tell them apart.',
+        );
+        return;
+      }
+
       const staffId = await createStaff(
         {
           branchId: form.branchId,

@@ -2,23 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import process from 'node:process';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-
-/**
- * Branch PINs for the preview.
- *
- * The default is a demo value, deliberately. A published preview bundle and a
- * public repository are both places a real shop PIN must never appear. Pass
- * PREVIEW_PIN_* in the environment to rehearse locally with the real ones —
- * they stay in your shell and never reach a file.
- */
-const previewPins = {
-  win: process.env.PREVIEW_PIN_WIN || '1234',
-  pwint: process.env.PREVIEW_PIN_PWINT || '1234',
-  yangon: process.env.PREVIEW_PIN_YANGON || '1234',
-};
 
 /**
  * Build for the standalone, offline preview (`npm run preview:build`).
@@ -50,11 +35,9 @@ export default defineConfig({
     ],
   },
   define: {
-    __PREVIEW_PINS__: JSON.stringify(JSON.stringify(previewPins)),
     /* Drives the app down its real client-side punch fallback, so a clock-out
        in the preview runs the genuine overtime calculation. */
     'import.meta.env.VITE_ALLOW_CLIENT_PUNCH': '"true"',
-    'import.meta.env.VITE_DEV_BRANCH_PIN': '"1234"',
     /* Placeholder Firebase values. The SDK is stubbed, so these are never
        used for anything — they exist so `isFirebaseConfigured` is true and the
        preview console is not littered with a misconfiguration error.

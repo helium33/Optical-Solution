@@ -24,6 +24,8 @@ import {
 import { workingDaysInMonth, summariseMonth } from '../lib/monthly';
 import { formatMonth } from '../i18n/months';
 import { BRANCHES, BRANCH_PINS } from '../config/branches';
+import { pickStaffMatch } from '../lib/pinMatch';
+import { verifyPin, createPinRecord } from '../lib/crypto';
 import {
   decodePlusCode,
   recoverPlusCode,
@@ -658,7 +660,74 @@ test('BRANCHES: standing at one shop fails the other two fences', () => {
   assert.equal(evaluateFence(atPwint, BRANCHES.yangon.geofence).verdict, FENCE.OUTSIDE);
 });
 
+/* ========================= kiosk PIN matching ========================== */
+
+/* Fictional people and PINs. This repository is public: real staff and the
+   PINs they use must never appear in it, not even in a test. */
+const ONE = { id: 'p1', name: 'Person One' };
+const TWO = { id: 'p2', name: 'Person Two' };
+const THREE = { id: 'p3', name: 'Person Three' };
+
+test('PIN MATCH: exactly one match opens that person', () => {
+  const r = pickStaffMatch([
+    { person: ONE, ok: true },
+    { person: TWO, ok: false },
+    { person: THREE, ok: false },
+  ]);
+  assert.equal(r.ok, true);
+  assert.equal(r.staff, ONE);
+});
+
+test('PIN MATCH: no match is a wrong PIN', () => {
+  const r = pickStaffMatch([{ person: ONE, ok: false }, { person: TWO, ok: false }]);
+  assert.deepEqual(r, { ok: false, reason: 'wrong-pin' });
+  assert.deepEqual(pickStaffMatch([]), { ok: false, reason: 'wrong-pin' });
+});
+
+test('PIN MATCH: two people sharing a PIN is refused, never guessed', () => {
+  /* Picking the first would clock somebody in as a colleague, and the screen
+     would show nothing wrong. */
+  const r = pickStaffMatch([
+    { person: ONE, ok: true },
+    { person: TWO, ok: true },
+    { person: THREE, ok: false },
+  ]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'pin-ambiguous');
+  assert.equal(r.count, 2);
+  assert.equal(r.staff, undefined);
+});
+
 /* ============================= report ================================= */
+
+/* Real PBKDF2 against three distinct PINs. Async, so it is awaited here
+   rather than registered with the synchronous test() above. */
+await (async () => {
+  const name = 'PIN MATCH: real PBKDF2 picks the right person out of three';
+  try {
+    const people = await Promise.all(
+      [[ONE, '4821'], [TWO, '5937'], [THREE, '6044']].map(async ([person, pin]) => ({
+        person,
+        record: await createPinRecord(pin),
+      })),
+    );
+    const check = async (pin) =>
+      pickStaffMatch(
+        await Promise.all(
+          people.map(async ({ person, record }) => ({ person, ok: await verifyPin(pin, record) })),
+        ),
+      );
+    assert.equal((await check('4821')).staff, ONE);
+    assert.equal((await check('5937')).staff, TWO);
+    assert.equal((await check('6044')).staff, THREE);
+    assert.equal((await check('0000')).reason, 'wrong-pin');
+    passed += 1;
+    results.push(['ok', name]);
+  } catch (error) {
+    failed += 1;
+    results.push(['FAIL', `${name}\n         ${error.message.split('\n')[0]}`]);
+  }
+})();
 
 for (const [mark, name] of results) {
   console.log(`  ${mark.padEnd(4)}  ${name}`);

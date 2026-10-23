@@ -33,8 +33,6 @@
     "whichShop": "Which shop is this tablet in?",
     "unlock": "Unlock the {{branch}} kiosk",
     "chooseAnother": "Choose a different shop",
-    "askSupervisor": "Staff do not need an account. Ask a supervisor for the branch PIN.",
-    "unlocking": "Unlocking…",
     "tapYourName": "Tap your name to clock in or out",
     "tapYourNameIn": "Tap your name to clock in",
     "notClockedIn": "Not clocked in",
@@ -55,7 +53,9 @@
     "fingerprintEnrolled": "Fingerprint enrolled",
     "runDiagnostics": "Run diagnostics →",
     "viewBranch": "View branch",
-    "unlockOrOwnPin": "Branch PIN to open {{branch}}, or your own PIN for your records"
+    "enterOwnPin": "Type your own PIN for {{branch}}",
+    "checkingPin": "Checking your PIN…",
+    "askAdminForPin": "Staff do not need an account. Your PIN comes from an administrator."
   },
   "hierarchy": {
     "title": "Branch structure",
@@ -150,13 +150,12 @@
     "borderline": "You are close to the edge of the allowed area. Move a little closer to the shop if the check fails."
   },
   "errors": {
-    "wrongBranchPin": "That is not the PIN for this branch.",
     "wrongPin": "That PIN was not recognised.",
     "tooManyAttempts": "Too many attempts. Wait a minute before trying again.",
     "noServer": "Cannot reach the server. Check the connection.",
     "generic": "Something went wrong. Try again.",
     "anonymousDisabled": "Turn on Anonymous sign-in in Firebase → Authentication → Sign-in method. The kiosk needs some identity before Firestore will let it read the roster.",
-    "notDeployed": "PIN checking is switched off in this build. Set VITE_ALLOW_CLIENT_PUNCH=true in the hosting provider's environment variables (Netlify: Site settings → Environment variables) and redeploy — Vite bakes it in when the site is BUILT, so a .env on your own computer does not reach a deployed site. The alternative is deploying the verifyBranchPin function.",
+    "notDeployed": "PIN checking is switched off in this build. Set VITE_ALLOW_CLIENT_PUNCH=true in the hosting provider's environment variables (Netlify: Site settings → Environment variables) and redeploy — Vite bakes it in when the site is BUILT, so a .env on your own computer does not reach a deployed site. The alternative is deploying the Cloud Functions.",
     "timeout": "The server did not answer. Check the connection and try again.",
     "rulesNotDeployed": "This tablet is signed in but Firestore is refusing to send the roster — the security rules have not been deployed for the attendance collections. Run `npm run merge:rules` and publish the result.",
     "kioskSessionExpired": "This tablet's sign-in has expired. Lock the kiosk and unlock it again with the branch PIN — the roster cannot be read without an identity.",
@@ -165,7 +164,8 @@
     "pinUnreadable": "Firestore is refusing to read or write PINs. This is the rules, not the PIN: run `npm run merge:rules`, paste firestore.rules.merged into Firebase Console → Firestore → Rules, and Publish.",
     "rulesNotPublished": "Firestore refused to read the roster. The attendance rules have not been published: run `npm run merge:rules` and publish the result.",
     "domainNotAuthorised": "The PIN was correct, but Firebase does not recognise this website's address. Firebase Console → Authentication → Settings → Authorized domains → Add domain, and add the address shown in the browser bar.",
-    "badApiKey": "The Firebase key in this build is missing or wrong. Check VITE_FIREBASE_API_KEY in the hosting provider's environment variables against Firebase Console → Project settings, then deploy again."
+    "badApiKey": "The Firebase key in this build is missing or wrong. Check VITE_FIREBASE_API_KEY in the hosting provider's environment variables against Firebase Console → Project settings, then deploy again.",
+    "pinAmbiguous": "This PIN belongs to more than one person here. Ask an administrator to give one of them a different PIN."
   },
   "admin": {
     "title": "Attendance",
@@ -255,7 +255,8 @@
     "noStaffYet": "No employees yet",
     "nameRequired": "A name is required.",
     "pinFourDigits": "The PIN must be exactly 4 digits.",
-    "pinReserved": "That PIN is reserved by the system. Choose another."
+    "pinReserved": "That PIN is reserved by the system. Choose another.",
+    "pinTaken": "{{name}} already uses this PIN at this branch. Each person needs their own, or the kiosk cannot tell them apart."
   },
   "monthly": {
     "title": "Monthly summary",

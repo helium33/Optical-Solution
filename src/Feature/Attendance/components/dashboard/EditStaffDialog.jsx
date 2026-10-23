@@ -8,6 +8,7 @@ import { useBranches } from '../../config/BranchesProvider';
 import { STAFF_ROLE_ORDER, roleLabel } from '../../config/roles';
 import { updateStaffDetails, setStaffPin, fetchStaffPin } from '../../services/staff.service';
 import { ADMIN_SEQUENCE } from '../../services/adminReveal';
+import { findStaffWithPin } from '../../services/verification.service';
 
 /**
  * Edit one employee: name, role, branch, PIN.
@@ -63,6 +64,19 @@ export default function EditStaffDialog({ open, onClose, staff, actor, onSaved }
     setBusy(true);
     setError(null);
     try {
+      /* The kiosk identifies people by PIN alone, so a PIN must be unique
+         within its branch. Checked when a PIN is typed, and also when only the
+         branch changes — moving someone carries their existing PIN into a shop
+         where somebody may already have it. */
+      const pinToCheck = form.pin || (form.branchId !== staff.branchId ? currentPin : null);
+      if (pinToCheck) {
+        const clash = await findStaffWithPin(form.branchId, pinToCheck, { exceptStaffId: staff.id });
+        if (clash) {
+          setError(t('admin.pinTaken', { name: clash.name }));
+          return;
+        }
+      }
+
       await updateStaffDetails(
         staff.id,
         {

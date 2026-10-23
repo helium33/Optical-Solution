@@ -16,7 +16,6 @@ import { functions } from '../config/firebase';
 import { attendanceCol, attendanceDoc, attendanceLogId } from './paths';
 import { computeWorkSession, businessDayKey, zonedTimeToUtc } from '../lib/time';
 import { deviceFingerprint } from '../lib/crypto';
-import { isCallableUnavailable } from '../lib/callableErrors';
 
 export const PUNCH = { CHECK_IN: 'check_in', CHECK_OUT: 'check_out' };
 export const AUTH_METHOD = { PIN: 'pin', BIOMETRIC: 'biometric' };
@@ -128,22 +127,26 @@ export async function submitPunch(punch) {
     clientTime: new Date().toISOString(),
   };
 
-  try {
-    const response = await callSubmitPunch(payload);
-    return response.data;
-  } catch (error) {
-    if (ALLOW_CLIENT_PUNCH && isCallableUnavailable(error)) {
-      return submitPunchUnverified(payload);
-    }
-    throw error;
-  }
+  /* A build that says Functions are not deployed goes straight to the client
+     write, rather than asking cloudfunctions.net first and falling back on
+     failure. The fallback only ever fired on a failure that came back FAST.
+     Where that host is unreachable — without a VPN, from the shops — the call
+     hangs for the SDK's 70-second default and ends in a timeout, which is
+     not a fallback case, so the punch was lost. With a VPN the request reached
+     Google, failed in a moment and fell back, which is why the app only
+     seemed to work on one. */
+  if (ALLOW_CLIENT_PUNCH) return submitPunchUnverified(payload);
+
+  const response = await callSubmitPunch(payload);
+  return response.data;
 }
 
 /**
  * DEVELOPMENT ONLY — writes the log straight from the browser.
  *
- * Enabled by VITE_ALLOW_CLIENT_PUNCH=true and only reached when the callable
- * is genuinely absent, so a real deployment cannot silently fall into it. Every
+ * Enabled by VITE_ALLOW_CLIENT_PUNCH=true, which now means "this build has no
+ * Functions" outright: the callable is not attempted at all. A deployment with
+ * the flag off never reaches this. Every
  * record it writes is tagged `verifiedBy: 'client-unverified'` so unverified
  * rows are greppable in the database rather than indistinguishable from real
  * ones. Leave this off in production; the matching Firestore rule should deny

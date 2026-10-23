@@ -11,7 +11,7 @@ import { ADMIN_EMAILS, isAllowlistedAdmin } from '../auth/admins';
 import { BRANCH_IDS } from '../config/branches';
 import { ROLES } from '../config/roles';
 import { isCallableUnavailable } from '../lib/callableErrors';
-import { DEV_FALLBACK, DEV_BRANCH_PIN_IDS, unlockKiosk } from '../services/verification.service';
+import { DEV_FALLBACK, unlockWithStaffPin } from '../services/verification.service';
 
 /**
  * `/attendance/diagnostics` — no gate, reachable by anyone with the URL.
@@ -58,11 +58,27 @@ const CHECKED_COLLECTIONS = [
  * next shape is read off the screen instead of described secondhand.
  */
 const CHECKED_CALLABLES = [
-  { name: 'verifyBranchPin', payload: { branchId: 'diagnostics-probe', pin: '0000' }, why: 'unlocking the kiosk' },
   { name: 'submitPunch', payload: { kind: 'check_in', branchId: 'diagnostics-probe', staffId: 'diagnostics-probe' }, why: 'a verified clock-in/out' },
   { name: 'setStaffPin', payload: { staffId: 'diagnostics-probe', pin: '0000' }, why: 'giving a new employee a PIN' },
   { name: 'beginWebAuthnRegistration', payload: { staffId: 'diagnostics-probe' }, why: 'enrolling a fingerprint' },
   { name: 'beginWebAuthnAuthentication', payload: { staffId: 'diagnostics-probe' }, why: 'clocking in with a fingerprint' },
+];
+
+/**
+ * Every server the kiosk needs, and nothing it does not.
+ *
+ * Firebase Auth's two hosts and Firestore are the whole dependency list now:
+ * PIN checks, punches and PIN changes in a build with VITE_ALLOW_CLIENT_PUNCH
+ * no longer touch Cloud Functions, and the shop-Wi-Fi IP lookup is off. Cloud
+ * Functions is still probed, labelled as unused, so a VPN comparison can show
+ * whether it was ever the blocked one.
+ */
+const REACHABILITY_TARGETS = [
+  { host: window.location.host, url: '/manifest.webmanifest', why: 'this site itself' },
+  { host: 'identitytoolkit.googleapis.com', url: 'https://identitytoolkit.googleapis.com/', why: 'Firebase sign-in (the kiosk session)' },
+  { host: 'securetoken.googleapis.com', url: 'https://securetoken.googleapis.com/', why: 'keeping that session signed in' },
+  { host: 'firestore.googleapis.com', url: 'https://firestore.googleapis.com/', why: 'staff, PINs and every punch' },
+  { host: 'cloudfunctions.net', url: `https://${import.meta.env.VITE_FIREBASE_REGION || 'asia-southeast1'}-${import.meta.env.VITE_FIREBASE_PROJECT_ID || 'x'}.cloudfunctions.net/`, why: 'Cloud Functions — not used by this build', unused: true },
 ];
 
 export default function DiagnosticsPage() {
@@ -77,6 +93,8 @@ export default function DiagnosticsPage() {
   const [testPin, setTestPin] = useState('');
   const [unlockTesting, setUnlockTesting] = useState(false);
   const [unlockResult, setUnlockResult] = useState(null);
+  const [reachResults, setReachResults] = useState(null);
+  const [reachRunning, setReachRunning] = useState(false);
 
   useEffect(
     () =>
@@ -135,7 +153,10 @@ export default function DiagnosticsPage() {
     const next = [];
     for (const { name, payload, why } of CHECKED_CALLABLES) {
       try {
-        const response = await httpsCallable(functions, name)(payload);
+        /* Capped well below the SDK's 70-second default. Where the host is
+           unreachable the request hangs rather than failing, and four of
+           these in a row at the default was five minutes of spinner. */
+        const response = await httpsCallable(functions, name, { timeout: 8_000 })(payload);
         next.push({ name, why, ok: true, data: response?.data });
       } catch (error) {
         next.push({
@@ -152,8 +173,13 @@ export default function DiagnosticsPage() {
     setCallableRunning(false);
   }, []);
 
+  /* Only automatic when the app actually uses Functions. With
+     VITE_ALLOW_CLIENT_PUNCH on, nothing in the app calls them — opening this
+     page would otherwise be the ONLY thing sending requests to
+     cloudfunctions.net, and on a connection where that host is blocked it
+     would sit spinning over a dependency that does not exist. */
   useEffect(() => {
-    runCallableChecks();
+    if (!DEV_FALLBACK) runCallableChecks();
   }, [runCallableChecks]);
 
   /**
@@ -218,28 +244,66 @@ export default function DiagnosticsPage() {
   };
 
   /**
-   * Calls `unlockKiosk` — the exact function the kiosk PIN pad calls, not a
-   * re-implementation of it — with whatever branch and PIN the operator types
-   * here, and shows the raw `{ok, reason, message}` it returns. Every failure
-   * reason this app can produce (wrong PIN, anonymous sign-in disabled, rate
-   * limited, not deployed, a timeout) reads identically to "wrong PIN" on the
-   * actual kiosk screen; this is the one place that tells them apart.
+   * Runs the same staff-PIN check the kiosk keypad runs, with whatever branch
+   * and PIN the operator types here, and shows what came back — and how long
+   * each half took, since "it is slow" needs a number to be fixed.
    *
-   * Manual and side-effecting, like section 5: a PIN that matches signs this
-   * browser into a real anonymous session, which replaces whatever identity
-   * section 2 above currently shows.
+   * Says WHETHER a PIN matches, never WHO it matches. This page has no gate,
+   * and its promise at the top is no staff names. The kiosk itself is the way
+   * to see whose screen a PIN opens.
+   *
+   * Side-effecting, like section 5: it may sign this browser into an anonymous
+   * session, replacing whatever identity section 2 shows.
    */
   const runUnlockTest = async () => {
     setUnlockTesting(true);
     setUnlockResult(null);
     try {
-      const result = await unlockKiosk(testBranch, testPin);
+      const result = await unlockWithStaffPin(testBranch, testPin);
       setUnlockResult(result);
     } catch (error) {
       setUnlockResult({ ok: false, reason: 'exception', message: error?.message ?? String(error) });
     } finally {
       setUnlockTesting(false);
     }
+  };
+
+  /**
+   * Can this connection reach each server the kiosk depends on?
+   *
+   * Answers "does it only work on a VPN" with evidence instead of guesses: run
+   * it once with the VPN off and once with it on, and the difference is the
+   * blocked host. `no-cors` because these are cross-origin endpoints that do
+   * not send CORS headers to an arbitrary page — the response is opaque, but
+   * an opaque response still proves a connection was made, and that is all
+   * this asks. A network error or a hang is the answer worth having.
+   */
+  const runReachability = async () => {
+    setReachRunning(true);
+    setReachResults(null);
+    const probe = async ({ host, url, why, unused = false }) => {
+      const started = performance.now();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8_000);
+      try {
+        await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+        return { host, why, unused, ok: true, ms: Math.round(performance.now() - started) };
+      } catch (error) {
+        return {
+          host,
+          why,
+          unused,
+          ok: false,
+          ms: Math.round(performance.now() - started),
+          timedOut: error?.name === 'AbortError',
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    /* In parallel: a blocked host that hangs should not hold up the others. */
+    setReachResults(await Promise.all(REACHABILITY_TARGETS.map(probe)));
+    setReachRunning(false);
   };
 
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || '(not set)';
@@ -364,19 +428,27 @@ export default function DiagnosticsPage() {
             disabled={callableRunning}
             className="rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:text-ink disabled:opacity-50"
           >
-            {callableRunning ? 'Running…' : 'Re-run'}
+            {callableRunning ? 'Running…' : callableResults ? 'Re-run' : 'Check anyway'}
           </button>
         }
       >
+        {DEV_FALLBACK ? (
+          <p className="mb-3 rounded-xl bg-ok-soft px-3 py-2 text-xs leading-relaxed text-ok-ink">
+            <strong>Not used by this build.</strong> <code>VITE_ALLOW_CLIENT_PUNCH</code> is on, so
+            the PIN check, every punch and every PIN change go straight to Firestore and never
+            call a Cloud Function. Nothing below affects the kiosk; it only runs if you press the
+            button.
+          </p>
+        ) : null}
         <p className="mb-3 text-xs leading-relaxed text-ink-subtle">
           Every payload names a branch/employee id that cannot exist, so even a
           fully deployed, correctly working backend has nothing to act on here
           — this only shows whether the request reaches a function at all, in
           whatever shape a request-to-nothing actually comes back as. None of
-          your nine callables are deployed yet, so every row below is expected
+          your callables are deployed yet, so every row below is expected
           to fail; what matters is the exact code.
         </p>
-        {!callableResults ? (
+        {!callableResults && !callableRunning && DEV_FALLBACK ? null : !callableResults ? (
           <Row icon={<LuLoaderCircle className="h-4 w-4 animate-spin" />} tone="pending">
             Running…
           </Row>
@@ -477,85 +549,85 @@ export default function DiagnosticsPage() {
         )}
       </Section>
 
-      {/* ---- branch PIN configuration ---- */}
-      <Section title="6. Why would a branch PIN be refused?">
+      {/* ---- network reachability ---- */}
+      <Section
+        title="6. Can this connection reach the servers the kiosk needs?"
+        action={
+          <button
+            type="button"
+            onClick={runReachability}
+            disabled={reachRunning}
+            className="rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:text-ink disabled:opacity-50"
+          >
+            {reachRunning ? 'Checking…' : reachResults ? 'Re-run' : 'Check'}
+          </button>
+        }
+      >
         <p className="mb-3 text-xs leading-relaxed text-ink-subtle">
-          The kiosk PIN pad calls the exact same setting checked here — this is what the
-          tablet actually does, not a description of it. Nothing below can show what a
-          PIN is, only whether one is configured.
+          If the app only works on a VPN, run this with the VPN <strong>off</strong>, then again
+          with it <strong>on</strong>. A row that fails only without the VPN is the server your
+          internet provider is blocking. Each check gives up after 8 seconds.
         </p>
         <Row
           icon={DEV_FALLBACK ? <LuCircleCheck className="h-4 w-4" /> : <LuCircleX className="h-4 w-4" />}
           tone={DEV_FALLBACK ? 'good' : 'bad'}
         >
-          Local test PINs (<code>VITE_ALLOW_CLIENT_PUNCH</code>) are {DEV_FALLBACK ? 'ON' : 'OFF'}
+          Cloud Functions are {DEV_FALLBACK ? 'not used' : 'REQUIRED'} by this build
+          (<code>VITE_ALLOW_CLIENT_PUNCH</code> is {DEV_FALLBACK ? 'on' : 'off'})
         </Row>
         {!DEV_FALLBACK ? (
-          <p className="mt-2 text-xs text-ink-subtle">
-            With this off, every branch PIN — Win, Pwint, Yangon, all of them — goes
-            straight to <code>verifyBranchPin</code>, the real server function that section
-            4 above already shows is not deployed. That refuses every PIN the same way,
-            which looks identical to a wrong PIN at the keypad but is not one. If{' '}
-            <code>.env</code> already has <code>VITE_ALLOW_CLIENT_PUNCH=true</code>, this
-            reading is stale: Vite only reads <code>.env</code> when the dev server starts,
-            never while it keeps running — fully stop <code>npm run dev</code> (not just
-            save the file) and start it again, then reload this page.
+          <p className="ml-6 mt-1 text-xs text-ink-muted">
+            With this off, every punch goes to a function that has never been deployed. Set{' '}
+            <code>VITE_ALLOW_CLIENT_PUNCH=true</code> in the hosting environment variables and
+            redeploy.
           </p>
-        ) : (
-          <>
-            <div className="mt-3 space-y-1">
-              {BRANCH_IDS.map((id) => {
-                const hasOwnPin = DEV_BRANCH_PIN_IDS.includes(id);
-                return (
-                  <Row
-                    key={id}
-                    icon={hasOwnPin ? <LuCircleCheck className="h-4 w-4" /> : <LuTriangleAlert className="h-4 w-4" />}
-                    tone={hasOwnPin ? 'good' : 'bad'}
-                  >
-                    <code className="font-semibold">{id}</code>
-                    <span className="text-ink-subtle">
-                      {' '}
-                      —{' '}
-                      {hasOwnPin
-                        ? 'has its own PIN in VITE_DEV_BRANCH_PINS'
-                        : 'no PIN of its own; falls back to the shared PIN'}
-                    </span>
-                  </Row>
-                );
-              })}
-            </div>
-            {DEV_BRANCH_PIN_IDS.length === 0 ? (
-              <p className="mt-2 text-xs text-ink-subtle">
-                <code>VITE_DEV_BRANCH_PINS</code> is empty or not set, so all three branches
-                share one PIN instead (<code>VITE_DEV_BRANCH_PIN</code>, or 1234 if that is
-                unset too) — typing Win/Pwint/Yangon&apos;s own intended PINs would be
-                refused as &ldquo;wrong PIN&rdquo; everywhere. If <code>.env</code> already
-                has <code>VITE_DEV_BRANCH_PINS=win:1111,pwint:2222,yangon:3333</code>, this
-                is stale for the same reason as above: fully restart{' '}
-                <code>npm run dev</code>, then reload this page.
+        ) : null}
+        {reachResults ? (
+          <div className="mt-3 space-y-1.5">
+            {reachResults.map((r) => (
+              <div key={r.host}>
+                <Row
+                  icon={
+                    r.ok ? (
+                      <LuCircleCheck className="h-4 w-4" />
+                    ) : r.unused ? (
+                      <LuTriangleAlert className="h-4 w-4" />
+                    ) : (
+                      <LuCircleX className="h-4 w-4" />
+                    )
+                  }
+                  tone={r.ok ? 'good' : r.unused ? 'pending' : 'bad'}
+                >
+                  <code className="font-semibold">{r.host}</code>
+                  <span className="font-normal text-ink-subtle">
+                    {' '}— {r.why} ·{' '}
+                    {r.ok ? `${r.ms} ms` : r.timedOut ? 'no answer in 8 s' : `failed after ${r.ms} ms`}
+                  </span>
+                </Row>
+              </div>
+            ))}
+            {reachResults.some((r) => !r.ok && !r.unused) ? (
+              <p className="mt-2 text-xs leading-relaxed text-danger-ink/85">
+                A server the kiosk needs cannot be reached from this connection. If the same row
+                passes with a VPN on, this internet provider is blocking it; the app cannot work
+                around a blocked Google server by itself.
               </p>
-            ) : DEV_BRANCH_PIN_IDS.some((id) => !BRANCH_IDS.includes(id)) ? (
-              <p className="mt-2 text-xs text-danger-ink/85">
-                <code>VITE_DEV_BRANCH_PINS</code> has an id that matches no real branch:{' '}
-                <code>{DEV_BRANCH_PIN_IDS.filter((id) => !BRANCH_IDS.includes(id)).join(', ')}</code>.
-                Check for a typo or a stray space around a colon or comma in{' '}
-                <code>.env</code> — it has to read exactly{' '}
-                <code>win:••••,pwint:••••,yangon:••••</code>.
+            ) : (
+              <p className="mt-2 text-xs leading-relaxed text-ok-ink">
+                Every server the kiosk needs is reachable from this connection.
               </p>
-            ) : null}
-          </>
-        )}
+            )}
+          </div>
+        ) : null}
       </Section>
 
       {/* ---- live unlock test ---- */}
-      <Section title="7. Test a real branch unlock">
+      <Section title="7. Test a staff PIN">
         <p className="mb-3 text-xs leading-relaxed text-ink-subtle">
-          Calls <code>unlockKiosk</code> — the exact function the kiosk PIN pad calls, not
-          a description of it — with the branch and PIN typed below, and shows exactly
-          what it returns. This is not read-only like the checks above: a PIN that
-          matches signs THIS browser into a real anonymous kiosk session, replacing
-          whatever identity section 2 shows. Read the result below, not the kiosk
-          screen.
+          Runs the same check the kiosk keypad runs, for the branch and PIN typed below, and
+          shows whether it matches and how long it took. It never shows <em>who</em> a PIN
+          belongs to — type it at the kiosk to see that. Not read-only: it may sign this
+          browser into an anonymous session, replacing whatever identity section 2 shows.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <label className="block">
@@ -580,7 +652,7 @@ export default function DiagnosticsPage() {
               value={testPin}
               onChange={(event) => setTestPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
               inputMode="numeric"
-              placeholder="1111"
+              placeholder="0000"
               autoComplete="off"
               className="w-24 rounded-xl border border-line bg-surface-card px-3 py-2 text-sm text-ink"
             />
@@ -591,7 +663,7 @@ export default function DiagnosticsPage() {
             disabled={unlockTesting || testPin.length !== 4}
             className="rounded-xl bg-brand-600 px-4 py-2 text-xs font-bold text-brand-on disabled:opacity-50"
           >
-            {unlockTesting ? 'Testing…' : 'Test unlock'}
+            {unlockTesting ? 'Testing…' : 'Test PIN'}
           </button>
         </div>
         {unlockResult ? (
@@ -600,42 +672,59 @@ export default function DiagnosticsPage() {
               icon={unlockResult.ok ? <LuCircleCheck className="h-4 w-4" /> : <LuCircleX className="h-4 w-4" />}
               tone={unlockResult.ok ? 'good' : 'bad'}
             >
-              {unlockResult.ok ? 'Accepted' : (
+              {unlockResult.ok ? 'Matches exactly one person at this branch' : (
                 <>
                   Refused — reason: <code>{unlockResult.reason ?? 'unknown'}</code>
                 </>
               )}
             </Row>
+            {unlockResult.timings ? (
+              <p className="ml-6 mt-1 text-xs text-ink-subtle">
+                Network {unlockResult.timings.networkMs} ms (sign-in, roster, PIN records) ·
+                checking {unlockResult.timings.hashingMs} ms across {unlockResult.timings.people}{' '}
+                {unlockResult.timings.people === 1 ? 'person' : 'people'}. At the kiosk the network
+                part starts as soon as the shop is chosen, so only the checking part is waited for.
+              </p>
+            ) : null}
             {!unlockResult.ok && unlockResult.message ? (
               <p className="ml-6 mt-1 text-xs text-danger-ink/85">{unlockResult.message}</p>
             ) : null}
-            {!unlockResult.ok && unlockResult.reason === 'anonymous-disabled' ? (
+            {!unlockResult.ok && unlockResult.reason === 'wrong-pin' ? (
               <p className="ml-6 mt-1 text-xs text-ink-muted">
-                The PIN itself was correct. Firebase Console → Authentication → Sign-in
-                method → enable <strong>Anonymous</strong>, then test again.
+                Nobody at this branch has this PIN. Set it in the admin dashboard → Employee
+                management → Edit — and check the person is at <em>this</em> branch.
               </p>
             ) : null}
-            {!unlockResult.ok && (unlockResult.reason === 'not-deployed' || unlockResult.reason === 'unavailable') ? (
+            {!unlockResult.ok && unlockResult.reason === 'pin-ambiguous' ? (
               <p className="ml-6 mt-1 text-xs text-ink-muted">
-                This never reached the PIN comparison at all — it went to the real,
-                undeployed <code>verifyBranchPin</code> function instead. See section 6
-                above: local test PINs are most likely off, or <code>.env</code> was
-                edited without fully restarting <code>npm run dev</code>.
+                More than one person at this branch has this PIN, so the kiosk refuses it rather
+                than guess. Give one of them a different PIN in Employee management.
+              </p>
+            ) : null}
+            {!unlockResult.ok && unlockResult.reason === 'anonymous-disabled' ? (
+              <p className="ml-6 mt-1 text-xs text-ink-muted">
+                The kiosk could not start a session, so the PIN was never checked. Firebase
+                Console → Authentication → Sign-in method → enable <strong>Anonymous</strong>.
               </p>
             ) : null}
             {!unlockResult.ok && unlockResult.reason === 'sign-in-failed' ? (
               <p className="ml-6 mt-1 text-xs text-ink-muted">
-                The PIN itself was correct — this failed on the very next step, signing
-                the tablet in anonymously, which is a Firebase Auth problem rather than a
-                PIN or rules one. See the exact message above; a common cause is
-                something on this network or browser blocking Google&apos;s sign-in
-                servers specifically while everything else keeps working.
+                The kiosk could not start a session, so the PIN was never checked. Run section 6:
+                if <code>identitytoolkit.googleapis.com</code> fails there, this connection is
+                blocking Firebase sign-in.
               </p>
             ) : null}
-            {unlockResult.ok ? (
-              <p className="ml-6 mt-1 text-xs text-ink-subtle">
-                This browser is now signed in as that kiosk session — check section 2
-                above.
+            {!unlockResult.ok && unlockResult.reason === 'unavailable' ? (
+              <p className="ml-6 mt-1 text-xs text-ink-muted">
+                The staff list or PIN records could not be read, so the PIN was never checked.
+                Run section 6: if <code>firestore.googleapis.com</code> fails there, this
+                connection is blocking it.
+              </p>
+            ) : null}
+            {!unlockResult.ok && unlockResult.reason === 'rules-not-published' ? (
+              <p className="ml-6 mt-1 text-xs text-ink-muted">
+                Firestore refused to hand over the PIN records. The attendance rules that let a
+                kiosk read <code>secrets/verifier</code> have not been published.
               </p>
             ) : null}
           </div>

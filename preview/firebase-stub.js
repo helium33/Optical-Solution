@@ -8,21 +8,32 @@
  * genuine `computeWorkSession` overtime calculator and writes a genuine
  * attendance document; it is the network that is fake, not the logic.
  *
- * Two deliberate behaviours:
- *  - `verifyBranchPin` accepts 1234 and returns no custom token, so the
- *    preview never tries to sign in.
- *  - `submitPunch` and the WebAuthn callables report `functions/not-found`,
- *    which is exactly what an undeployed project reports. That drives the app
- *    down its real fallback paths: punches go through the client-side writer
- *    (tagged `client-unverified`, as designed) and biometrics correctly report
- *    themselves unavailable.
+ * One deliberate behaviour: every callable reports `functions/not-found`,
+ * which is exactly what an undeployed project reports. The preview build sets
+ * VITE_ALLOW_CLIENT_PUNCH, so the app does not call them on the punch or PIN
+ * paths at all; this only matters to the biometric button and diagnostics.
  */
 import { STAFF, BRANCH_DOCS, buildAttendance } from './fixtures';
 import { createPinRecord } from '../src/Feature/Attendance/lib/crypto';
 
-/** The personal PIN every preview employee answers to. Demo value only. */
-const PREVIEW_STAFF_PIN = '1234';
-let previewStaffPinRecord = null;
+/**
+ * Each preview employee's demo PIN: 1234 for every shop's supervisor (their
+ * code ends -001), otherwise 1 followed by the number in their employee code —
+ * WIN-004 is 1004.
+ *
+ * Distinct on purpose. The kiosk identifies a person by PIN alone and refuses
+ * a PIN that matches two people, so a preview where everybody shared 1234
+ * would refuse every PIN it advertised. Demo values only — real PINs never
+ * appear in this repository.
+ */
+const previewPinFor = (staffId) => {
+  const code = collections.staff?.get(staffId)?.employeeCode ?? '';
+  const number = /-(\d{3})$/.exec(code)?.[1];
+  if (!number) return null;
+  return number === '001' ? '1234' : `1${number}`;
+};
+/* Real PBKDF2, derived on first use and kept, as the shop's would be. */
+const previewPinRecords = new Map();
 
 /* ────────────────────────────── the store ─────────────────────────────── */
 
@@ -312,18 +323,21 @@ export const getDocs = async (ref) => snapshotOf(ref.name, ref.constraints ?? []
 export const getDoc = async (ref) => {
   let data = collections[ref.name]?.get(ref.id);
 
-  /* Give every preview employee the same demo PIN the chrome advertises, so
-     the personal sign-in and the admin PIN column can both be rehearsed.
-     Mirrors the real split: `verifier` holds the PBKDF2 record the kiosk
-     checks against, `pin` holds the PIN only an admin may read. Derived on
-     first use rather than at module load because it is real PBKDF2 — the
-     preview runs the same verification the shop does, at the same cost. */
+  /* Serve each preview employee their demo PIN, so the kiosk sign-in and the
+     admin PIN column can both be rehearsed. Mirrors the real split: `verifier`
+     holds the PBKDF2 record the kiosk checks against, `pin` holds the PIN only
+     an admin may read. A PIN set through the admin screen is a real document
+     in the store and wins over this, exactly as it would in Firestore. */
   if (!data && /^staff\/.+\/secrets$/.test(ref.name)) {
-    if (ref.id === 'verifier') {
-      previewStaffPinRecord ??= await createPinRecord(PREVIEW_STAFF_PIN);
-      data = previewStaffPinRecord;
-    } else if (ref.id === 'pin') {
-      data = { pin: PREVIEW_STAFF_PIN };
+    const staffId = ref.name.split('/')[1];
+    const pin = previewPinFor(staffId);
+    if (pin && ref.id === 'verifier') {
+      if (!previewPinRecords.has(staffId)) {
+        previewPinRecords.set(staffId, await createPinRecord(pin));
+      }
+      data = previewPinRecords.get(staffId);
+    } else if (pin && ref.id === 'pin') {
+      data = { pin };
     }
   }
 
@@ -388,19 +402,6 @@ const notDeployed = (name) => {
 };
 
 /**
- * Demo PINs for the preview only.
- *
- * These are NOT the shops' real PINs and must never be. The preview gets built
- * into a bundle that is published at a URL, and this repository is public — a
- * real PIN placed here would be readable by anyone who found either. Real PINs
- * live only as PBKDF2 hashes in Firestore, put there by scripts/seed-pins.mjs.
- *
- * To rehearse with the real ones on your own machine, without committing them:
- *   PREVIEW_PIN_WIN=… PREVIEW_PIN_PWINT=… npm run preview:dev
- */
-const PREVIEW_PINS = JSON.parse(__PREVIEW_PINS__);
-
-/**
  * Callables answer after a short delay rather than instantly.
  *
  * This is not cosmetic. An instant in-memory stub resolves in a microtask —
@@ -416,27 +417,8 @@ const NETWORK_LATENCY_MS = 350;
 const likeANetwork = (value) =>
   new Promise((resolve) => setTimeout(() => resolve(value), NETWORK_LATENCY_MS));
 
-export const httpsCallable = (fns, name) => async (payload) => {
+export const httpsCallable = (fns, name) => async () => {
   await likeANetwork();
-  if (name === 'verifyBranchPin') {
-    const expected = PREVIEW_PINS[payload?.branchId] ?? '1234';
-    if (payload?.pin !== expected) return { data: { ok: false, reason: 'wrong-pin' } };
-    /* A correct PIN leaves the tablet holding an identity, exactly as the real
-       one does by minting a custom token. The preview used to skip this and
-       return `ok` with nobody signed in, which is a state production never
-       reaches — and it hid the reload race the roster now guards against,
-       because a preview with no user looked identical to a healthy one. */
-    if (!currentUser) {
-      currentUser = {
-        uid: 'preview-kiosk',
-        isAnonymous: true,
-        getIdTokenResult: async () => ({ claims: {} }),
-      };
-      emitAuth();
-    }
-    return { data: { ok: true, ttlMinutes: 840 } };
-  }
-  /* Everything else behaves like an undeployed project, which is what drives
-     the app down the fallback paths this preview is meant to show. */
+  /* Every callable behaves like an undeployed project's. */
   throw notDeployed(name);
 };

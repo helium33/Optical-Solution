@@ -72,9 +72,8 @@ function PreviewChrome() {
         </nav>
 
         <p className="ml-auto hidden text-[11px] text-ink-subtle sm:block">
-          Branch PIN <strong className="font-bold text-ink">1234</strong> · staff PIN{' '}
-          <strong className="font-bold text-ink">1234</strong> · type{' '}
-          <strong className="font-bold text-ink">7860</strong> for admin
+          PIN <strong className="font-bold text-ink">1234</strong> opens each shop&apos;s
+          supervisor · type <strong className="font-bold text-ink">7860</strong> for admin
         </p>
 
         <ThemeToggle />
