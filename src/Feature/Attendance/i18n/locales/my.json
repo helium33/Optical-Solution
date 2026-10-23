@@ -33,8 +33,6 @@
     "whichShop": "ဤတက်ဘလက်သည် မည်သည့်ဆိုင်ခွဲတွင် ရှိပါသနည်း။",
     "unlock": "{{branch}} ဆိုင်ခွဲကို ဖွင့်ပါ",
     "chooseAnother": "အခြားဆိုင်ခွဲ ရွေးမည်",
-    "askSupervisor": "ဝန်ထမ်းများ အကောင့်ဖွင့်ရန် မလိုပါ။ ဆိုင်ခွဲ PIN ကို ကြီးကြပ်ရေးမှူးထံ တောင်းပါ။",
-    "unlocking": "ဖွင့်နေပါသည်…",
     "tapYourName": "ဝင်ချိန်/ထွက်ချိန် မှတ်ရန် သင့်နာမည်ကို နှိပ်ပါ",
     "tapYourNameIn": "ဝင်ချိန်မှတ်ရန် သင့်နာမည်ကို နှိပ်ပါ",
     "notClockedIn": "ဝင်ချိန် မမှတ်ရသေးပါ",
@@ -55,7 +53,9 @@
     "fingerprintEnrolled": "လက်ဗွေ မှတ်ပုံတင်ပြီး",
     "runDiagnostics": "စစ်ဆေးရန် →",
     "viewBranch": "Branch ကြည့်ရန်",
-    "unlockOrOwnPin": "{{branch}} ဖွင့်ရန် ဆိုင်ခွဲ PIN၊ သို့မဟုတ် သင့်မှတ်တမ်းအတွက် သင့်ကိုယ်ပိုင် PIN"
+    "enterOwnPin": "{{branch}} အတွက် သင့်ကိုယ်ပိုင် PIN ကို ရိုက်ထည့်ပါ",
+    "checkingPin": "PIN စစ်ဆေးနေပါသည်…",
+    "askAdminForPin": "ဝန်ထမ်းများ အကောင့်ဖွင့်ရန် မလိုပါ။ သင့် PIN ကို စီမံခန့်ခွဲသူထံ တောင်းပါ။"
   },
   "hierarchy": {
     "title": "ဆိုင်ခွဲ ဖွဲ့စည်းပုံ",
@@ -150,13 +150,12 @@
     "borderline": "ခွင့်ပြုနယ်ပယ်၏ အစွန်းနားတွင် ရှိနေပါသည်။ စစ်ဆေးမှု မအောင်မြင်ပါက ဆိုင်နှင့် အနည်းငယ် ပိုနီးအောင် သွားပါ။"
   },
   "errors": {
-    "wrongBranchPin": "ဤဆိုင်ခွဲ၏ PIN မဟုတ်ပါ။",
     "wrongPin": "PIN မမှန်ကန်ပါ။",
     "tooManyAttempts": "အကြိမ်များစွာ ကြိုးစားပြီးဖြစ်သည်။ တစ်မိနစ်ခန့် စောင့်ပြီး ထပ်ကြိုးစားပါ။",
     "noServer": "ဆာဗာသို့ မရောက်ပါ။ အင်တာနက် ချိတ်ဆက်မှုကို စစ်ဆေးပါ။",
     "generic": "တစ်ခုခု မှားယွင်းသွားသည်။ ထပ်ကြိုးစားပါ။",
     "anonymousDisabled": "Firebase → Authentication → Sign-in method တွင် Anonymous sign-in ကို ဖွင့်ပါ။ ဝန်ထမ်းစာရင်းကို ဖတ်နိုင်ရန် ဤတက်ဘလက်တွင် အထောက်အထားတစ်ခု လိုအပ်ပါသည်။",
-    "notDeployed": "ဤ build တွင် PIN စစ်ဆေးမှု ပိတ်ထားသည်။ VITE_ALLOW_CLIENT_PUNCH=true ကို hosting ရဲ့ environment variables တွင် ထည့်ပါ (Netlify: Site settings → Environment variables) ပြီးရင် redeploy လုပ်ပါ — Vite က site ကို BUILD လုပ်ချိန်မှာ ထည့်သွင်းတာမို့ သင့်ကွန်ပျူတာထဲက .env သည် deploy လုပ်ထားသော site သို့ မရောက်ပါ။ သို့မဟုတ် verifyBranchPin function ကို deploy လုပ်ပါ။",
+    "notDeployed": "ဤ build တွင် PIN စစ်ဆေးမှု ပိတ်ထားသည်။ VITE_ALLOW_CLIENT_PUNCH=true ကို hosting ရဲ့ environment variables တွင် ထည့်ပါ (Netlify: Site settings → Environment variables) ပြီးရင် redeploy လုပ်ပါ — Vite က site ကို BUILD လုပ်ချိန်မှာ ထည့်သွင်းတာမို့ သင့်ကွန်ပျူတာထဲက .env သည် deploy လုပ်ထားသော site သို့ မရောက်ပါ။ သို့မဟုတ် Cloud Functions ကို deploy လုပ်ပါ။",
     "timeout": "ဆာဗာမှ အကြောင်းပြန်မှု မရရှိပါ။ ချိတ်ဆက်မှုကို စစ်ဆေးပြီး ထပ်ကြိုးစားပါ။",
     "rulesNotDeployed": "ဤတက်ဘလက်သည် ဝင်ရောက်ပြီးဖြစ်သော်လည်း Firestore က ဝန်ထမ်းစာရင်းကို ပေးပို့ရန် ငြင်းဆိုနေသည် — attendance collection များအတွက် လုံခြုံရေးစည်းမျဉ်းများ တင်ထားခြင်း မရှိသေးပါ။ `npm run merge:rules` ကို run ပြီး ရလဒ်ကို publish လုပ်ပါ။",
     "kioskSessionExpired": "ဤတက်ဘလက်၏ ဝင်ရောက်မှု သက်တမ်းကုန်သွားပါပြီ။ Kiosk ကို lock လုပ်ပြီး ဆိုင်ခွဲ PIN ဖြင့် ပြန်ဖွင့်ပါ — အထောက်အထားမရှိဘဲ ဝန်ထမ်းစာရင်းကို ဖတ်၍မရပါ။",
@@ -165,7 +164,8 @@
     "pinUnreadable": "Firestore က PIN ကို ဖတ်/ရေး ခွင့်မပြုပါ။ ဤသည်မှာ PIN ပြဿနာ မဟုတ်ဘဲ rules ပြဿနာဖြစ်သည် — `npm run merge:rules` ကို run ပြီး firestore.rules.merged ကို Firebase Console → Firestore → Rules တွင် paste လုပ်၍ Publish နှိပ်ပါ။",
     "rulesNotPublished": "Firestore က ဝန်ထမ်းစာရင်းကို ဖတ်ခွင့်မပြုပါ။ Rules မတင်ရသေးပါ — `npm run merge:rules` ကို run ပြီး publish လုပ်ပါ။",
     "domainNotAuthorised": "PIN မှန်ပါသည်၊ သို့သော် Firebase က ဤဝက်ဘ်ဆိုက်၏ လိပ်စာကို မသိပါ။ Firebase Console → Authentication → Settings → Authorized domains → Add domain တွင် browser မှာပေါ်နေသော လိပ်စာကို ထည့်ပါ။",
-    "badApiKey": "ဤ build ထဲက Firebase key မှားနေသည် သို့မဟုတ် မပါပါ။ hosting ရဲ့ environment variables ထဲက VITE_FIREBASE_API_KEY ကို Firebase Console → Project settings နှင့် တိုက်စစ်ပြီး ပြန် deploy လုပ်ပါ။"
+    "badApiKey": "ဤ build ထဲက Firebase key မှားနေသည် သို့မဟုတ် မပါပါ။ hosting ရဲ့ environment variables ထဲက VITE_FIREBASE_API_KEY ကို Firebase Console → Project settings နှင့် တိုက်စစ်ပြီး ပြန် deploy လုပ်ပါ။",
+    "pinAmbiguous": "ဤ PIN ကို ဤဆိုင်ရှိ လူတစ်ဦးထက်ပို၍ သုံးထားပါသည်။ တစ်ဦးကို PIN အသစ်ပေးရန် စီမံခန့်ခွဲသူထံ ပြောပါ။"
   },
   "admin": {
     "title": "ချိန်မှတ်စနစ်",
@@ -255,7 +255,8 @@
     "noStaffYet": "ဝန်ထမ်း မရှိသေးပါ",
     "nameRequired": "အမည် ဖြည့်ရန် လိုအပ်သည်။",
     "pinFourDigits": "PIN သည် ဂဏန်းလေးလုံး အတိအကျ ဖြစ်ရပါမည်။",
-    "pinReserved": "ထို PIN ကို စနစ်က သီးသန့်ထားသည်။ အခြားတစ်ခု ရွေးပါ။"
+    "pinReserved": "ထို PIN ကို စနစ်က သီးသန့်ထားသည်။ အခြားတစ်ခု ရွေးပါ။",
+    "pinTaken": "{{name}} က ဤဆိုင်ခွဲတွင် ဤ PIN ကို သုံးထားပြီးဖြစ်သည်။ တစ်ဦးချင်းစီ ကိုယ်ပိုင် PIN မရှိလျှင် kiosk က ခွဲခြား၍ မရပါ။"
   },
   "monthly": {
     "title": "လစဉ် အနှစ်ချုပ်",

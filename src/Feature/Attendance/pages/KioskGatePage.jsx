@@ -12,19 +12,31 @@ import LanguageToggle from '../components/ui/LanguageToggle';
 import Spinner from '../components/ui/Spinner';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useBranches } from '../config/BranchesProvider';
-import { unlockKiosk, unlockWithStaffPin } from '../services/verification.service';
+import { prepareStaffPinCheck, matchStaffPin } from '../services/verification.service';
 import { openKioskSession } from '../services/kioskSession';
 import { ADMIN_SEQUENCE } from '../services/adminReveal';
 
 /**
- * Kiosk unlock: pick the shop, then enter the branch PIN.
+ * Kiosk sign-in: pick the shop, then type your OWN PIN.
+ *
+ * There is no branch PIN. A person's four digits take them straight to their
+ * own screen — see verification.service for why the shared shop code went.
  *
  * Two steps rather than one because picking the branch is what switches the
  * whole theme — the moment a staff member taps "Pwint" the screen becomes a
  * Pwint screen, and by the time they reach the keypad they already know the
- * tablet is set to the right shop. That is a lot more reassuring than a
- * correctly-themed screen appearing after a correct PIN.
+ * tablet is set to the right shop. It also decides which geofence applies.
  */
+
+/**
+ * How long a prepared roster is trusted before the keypad refreshes it.
+ *
+ * A tablet can sit on this screen all day. A minute is short enough that a
+ * PIN an admin has just changed is picked up on the next attempt anyway (see
+ * the retry in submit), and long enough that a queue of people clocking in at
+ * opening time all reuse one fetch.
+ */
+const PREPARED_TTL_MS = 60_000;
 export default function KioskGatePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -39,6 +51,8 @@ export default function KioskGatePage() {
   const [overtime, setOvertime] = useState(false);
   /* A ref, not the state, guards re-entry: state is a render behind. */
   const busyRef = useRef(false);
+  /** { branchId, at, promise } for the roster + verifiers, fetched ahead. */
+  const preparedRef = useRef(null);
 
   const { branches: BRANCH_LIST, get } = useBranches();
   const branch = useMemo(() => (selected ? get(selected) : null), [selected, get]);
@@ -47,6 +61,43 @@ export default function KioskGatePage() {
   useEffect(() => {
     setBranch(branch?.theme ?? HOUSE_THEME);
   }, [branch, setBranch]);
+
+  /**
+   * Start — or reuse — the network half of the PIN check.
+   *
+   * This is where the waiting used to happen: sign-in, roster, one verifier
+   * read per person, all after the fourth digit. Started here instead, it runs
+   * while somebody is still typing, which takes longer than the fetch does.
+   *
+   * A failed attempt is never cached, so a dropped connection is retried on
+   * the next keypress rather than remembered.
+   */
+  const ensurePrepared = useCallback(
+    ({ force = false } = {}) => {
+      if (!branch) return null;
+      const current = preparedRef.current;
+      const fresh =
+        current &&
+        current.branchId === branch.id &&
+        Date.now() - current.at < PREPARED_TTL_MS;
+      if (fresh && !force) return current.promise;
+
+      const entry = { branchId: branch.id, at: Date.now(), promise: null };
+      entry.promise = prepareStaffPinCheck(branch.id).then((result) => {
+        if (!result.ok && preparedRef.current === entry) preparedRef.current = null;
+        return result;
+      });
+      preparedRef.current = entry;
+      return entry.promise;
+    },
+    [branch],
+  );
+
+  /* The moment a shop is chosen, before anyone has typed. */
+  useEffect(() => {
+    if (branch) ensurePrepared();
+    else preparedRef.current = null;
+  }, [branch, ensurePrepared]);
 
   /**
    * Submit the moment the fourth digit lands.
@@ -73,36 +124,27 @@ export default function KioskGatePage() {
       setError(null);
 
       try {
-        const result = await unlockKiosk(branch.id, value);
+        let prepared = await ensurePrepared();
+        let result = prepared.ok ? await matchStaffPin(prepared, value) : prepared;
 
-        if (result.ok) {
-          openKioskSession(branch.id, { ttlMinutes: result.ttlMinutes });
-          navigate(`/attendance/kiosk/${branch.id}`, { replace: true });
-          return;
+        /* A miss against data fetched a while ago gets one fresh look before
+           it is called wrong. The likeliest reason a right PIN misses is that
+           an admin set or changed it after this keypad last fetched — and
+           telling someone their brand-new PIN is wrong is the worst possible
+           first experience of it. A genuinely wrong PIN pays one extra round
+           trip, which is no bad thing at a keypad either. */
+        if (!result.ok && result.reason === 'wrong-pin' && Date.now() - prepared.at > 3_000) {
+          prepared = await ensurePrepared({ force: true });
+          result = prepared.ok ? await matchStaffPin(prepared, value) : prepared;
         }
 
-        /* Not the branch PIN. Ask the other question these four digits could
-           be answering: is this somebody's own PIN? One keypad, because a
-           staff member should not have to get the shared roster unlocked for
-           them before they can reach their own screen. */
-        if (result.reason === 'wrong-pin') {
-          const asStaff = await unlockWithStaffPin(branch.id, value);
-          if (asStaff.ok) {
-            openKioskSession(branch.id, { ttlMinutes: result.ttlMinutes ?? 840 });
-            navigate(`/attendance/kiosk/${branch.id}`, {
-              replace: true,
-              state: { staffId: asStaff.staff.id, pin: value, overtime },
-            });
-            return;
-          }
-          /* A failure that is not "nobody matched" is worth reporting as
-             itself — an unenabled anonymous sign-in or unpublished rules say
-             nothing about whether the PIN was right. */
-          if (asStaff.reason !== 'wrong-pin') {
-            setPin('');
-            setError(errorKeyFor(asStaff.reason));
-            return;
-          }
+        if (result.ok) {
+          openKioskSession(branch.id, { ttlMinutes: 840 });
+          navigate(`/attendance/kiosk/${branch.id}`, {
+            replace: true,
+            state: { staffId: result.staff.id, pin: value, overtime },
+          });
+          return;
         }
 
         setPin('');
@@ -117,13 +159,16 @@ export default function KioskGatePage() {
         setBusy(false);
       }
     },
-    [branch, navigate, overtime],
+    [branch, navigate, overtime, ensurePrepared],
   );
 
   const onPinChange = useCallback(
     (next) => {
       setError(null);
       setPin(next);
+      /* First digit: refresh in the background if what we hold is stale, so
+         the fetch overlaps the remaining three keypresses. A no-op otherwise. */
+      if (next.length === 1) ensurePrepared();
       /* The reserved admin sequence is never a PIN. SecretAdminDoor is already
          navigating away; submitting it as well would flash "that is not the
          PIN" on the way out, which is exactly what the reveal looked like
@@ -132,7 +177,7 @@ export default function KioskGatePage() {
       if (next === ADMIN_SEQUENCE) return;
       if (next.length === 4) submit(next);
     },
-    [submit],
+    [submit, ensurePrepared],
   );
 
   return (
@@ -155,7 +200,7 @@ export default function KioskGatePage() {
           )}
           <h1 className="text-2xl font-bold tracking-tight text-ink">{t('kiosk.brand')}</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            {branch ? t('kiosk.unlockOrOwnPin', { branch: branch.shortName }) : t('kiosk.whichShop')}
+            {branch ? t('kiosk.enterOwnPin', { branch: branch.shortName }) : t('kiosk.whichShop')}
           </p>
         </div>
 
@@ -187,7 +232,7 @@ export default function KioskGatePage() {
           <div className="animate-fade-up glass glass-sheen rounded-4xl p-6 shadow-float sm:p-8">
             {busy ? (
               <div className="py-16">
-                <Spinner size={28} label={t('kiosk.unlocking')} />
+                <Spinner size={28} label={t('kiosk.checkingPin')} />
               </div>
             ) : (
               <>
@@ -248,7 +293,7 @@ export default function KioskGatePage() {
           </div>
         )}
 
-        <p className="mt-8 text-center text-xs text-ink-subtle">{t('kiosk.askSupervisor')}</p>
+        <p className="mt-8 text-center text-xs text-ink-subtle">{t('kiosk.askAdminForPin')}</p>
       </div>
 
       <BranchHierarchyDialog
@@ -290,8 +335,10 @@ function errorKeyFor(reason) {
       return 'errors.domainNotAuthorised';
     case 'bad-api-key':
       return 'errors.badApiKey';
+    case 'pin-ambiguous':
+      return 'errors.pinAmbiguous';
     default:
-      return 'errors.wrongBranchPin';
+      return 'errors.wrongPin';
   }
 }
 

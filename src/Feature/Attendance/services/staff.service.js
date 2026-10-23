@@ -17,7 +17,6 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../config/firebase';
 import { COLLECTIONS, staffCol, staffDoc } from './paths';
 import { ROLE_META } from '../config/roles';
-import { isCallableUnavailable } from '../lib/callableErrors';
 import { createPinRecord, verifyPin } from '../lib/crypto';
 
 /**
@@ -131,29 +130,34 @@ const ALLOW_CLIENT_FALLBACK = import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true'
  * collected it, and never logged.
  */
 export async function setStaffPin(staffId, pin, actorUid = null) {
-  try {
-    const response = await callSetStaffPin({ staffId, pin });
-    return response.data ?? { ok: true };
-  } catch (error) {
-    if (ALLOW_CLIENT_FALLBACK && isCallableUnavailable(error)) {
-      /* Two documents, because Firestore rules are per-document and these are
-         two different permissions. See the comment on staffPinDoc. */
-      await Promise.all([
-        setDoc(staffPinDoc(staffId), {
-          pin: String(pin),
-          updatedAt: serverTimestamp(),
-          updatedBy: actorUid,
-        }),
-        setDoc(staffVerifierDoc(staffId), {
-          ...(await createPinRecord(pin)),
-          updatedAt: serverTimestamp(),
-          setBy: 'client-unverified',
-        }),
-      ]);
-      return { ok: true, dev: true };
-    }
-    throw error;
-  }
+  /* Straight to the client path when this build runs without Functions,
+     instead of trying the callable first and falling back when it fails.
+     "Fails" is not always quick: where cloudfunctions.net is unreachable the
+     request hangs until the SDK gives up, and a hang ends in a timeout, which
+     is not a fallback case — so the save simply failed unless a VPN made the
+     request reach Google and fail fast. */
+  if (ALLOW_CLIENT_FALLBACK) return writePinFromClient(staffId, pin, actorUid);
+
+  const response = await callSetStaffPin({ staffId, pin });
+  return response.data ?? { ok: true };
+}
+
+/* Two documents, because Firestore rules are per-document and these are two
+   different permissions. See the comment on staffPinDoc. */
+async function writePinFromClient(staffId, pin, actorUid) {
+  await Promise.all([
+    setDoc(staffPinDoc(staffId), {
+      pin: String(pin),
+      updatedAt: serverTimestamp(),
+      updatedBy: actorUid,
+    }),
+    setDoc(staffVerifierDoc(staffId), {
+      ...(await createPinRecord(pin)),
+      updatedAt: serverTimestamp(),
+      setBy: 'client-unverified',
+    }),
+  ]);
+  return { ok: true, dev: true };
 }
 
 /**
@@ -218,6 +222,18 @@ export async function fetchStaffPin(staffId) {
  *
  * @returns {Promise<{ok: boolean, reason?: string}>}
  */
+/**
+ * One person's PBKDF2 verifier record, or null if no PIN has been set.
+ *
+ * Errors are thrown, not folded into null: a read that failed and a person
+ * with no PIN are different things, and the kiosk has to tell them apart or a
+ * dropped connection reads as "wrong PIN". See prepareStaffPinCheck.
+ */
+export async function fetchStaffVerifier(staffId) {
+  const snapshot = await getDoc(staffVerifierDoc(staffId));
+  return snapshot.exists() ? snapshot.data() : null;
+}
+
 export async function verifyStaffPin(staffId, pin) {
   if (!ALLOW_CLIENT_FALLBACK) return { ok: false, reason: 'not-deployed' };
 

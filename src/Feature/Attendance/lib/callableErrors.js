@@ -11,10 +11,13 @@
  * Seen in practice, all for the exact same underlying cause: `internal`,
  * `unavailable`, and — because a request that fails at the transport layer,
  * before the callable wrapper gets to attach one, has no `functions/` prefix
- * to attach it to — the bare, unprefixed form of any of these. This module's
- * own `unlockKiosk` already has one bare code for the same reason
- * (`error.code = 'deadline-exceeded'` on its own timeout race, checked
- * alongside `functions/deadline-exceeded`); this generalises that.
+ * to attach it to — the bare, unprefixed form of any of these.
+ *
+ * Note what this does NOT cover: a request that never comes back. Where
+ * cloudfunctions.net is unreachable the call hangs until it times out, and a
+ * timeout is deliberately not "unavailable" here — so a build with
+ * VITE_ALLOW_CLIENT_PUNCH on skips the callables entirely instead of relying
+ * on this to fall back.
  *
  * All of these mean the same thing here: the function is not there yet, not
  * that a deployed function rejected the call. Two narrower versions of this

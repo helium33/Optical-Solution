@@ -1,69 +1,42 @@
-import { httpsCallable } from 'firebase/functions';
-import { signInAnonymously, signInWithCustomToken, signOut } from 'firebase/auth';
+import { signInAnonymously, signOut } from 'firebase/auth';
 
-import { auth, functions } from '../config/firebase';
-import { isCallableUnavailable } from '../lib/callableErrors';
-import { fetchBranchStaff, verifyStaffPin } from './staff.service';
-
-/**
- * Branch PIN verification, and the identity it hands back.
- *
- * The kiosk has no user account — but it still has to read the roster and
- * today's punches out of Firestore, and "let anyone on the internet read every
- * shop's staff list" is not an acceptable rule. So a correct branch PIN returns
- * a Firebase CUSTOM TOKEN carrying two claims:
- *
- *     { kiosk: true, branchId: 'win' }
- *
- * The tablet signs in with it, and from then on Firestore rules can scope every
- * read to exactly one branch — no email, no password, no shared credential
- * sitting in the client bundle. The token is short-lived and re-minted by the
- * next unlock, so a stolen tablet stops working when the session expires.
- *
- * The PIN itself is compared server-side against a PBKDF2 hash the client is
- * never permitted to read.
- */
+import { auth } from '../config/firebase';
+import { verifyPin } from '../lib/crypto';
+import { pickStaffMatch } from '../lib/pinMatch';
+import { fetchBranchStaff, fetchStaffVerifier } from './staff.service';
 
 /**
- * Firebase callables default to a 70-second timeout. On a shop tablet that is
- * indistinguishable from "frozen" — nobody waits over a minute at a keypad, they
- * just press it again. Fifteen seconds is long enough for a slow connection and
- * short enough to stay a conversation.
+ * Kiosk sign-in: a staff member types their OWN PIN and lands on their own
+ * screen. There is no branch PIN any more.
+ *
+ * There used to be — one shared four-digit code per shop that opened the whole
+ * roster, tried before anybody's own PIN. It went for two reasons. The shop
+ * wanted each person's PIN to take them straight to themselves. And checking
+ * the branch PIN meant calling a Cloud Function, `verifyBranchPin`, that has
+ * never been deployed: every PIN waited on a request to cloudfunctions.net
+ * before the real check could start. With a VPN that request failed quickly
+ * and the app fell back; without one, where that host is unreachable, it hung
+ * until a 15-second timeout and then reported failure. That single dead call
+ * was both "unlocking is slow" and "it only works on a VPN".
+ *
+ * Nothing on this path talks to Cloud Functions now. It needs exactly two
+ * services, both of which the rest of the app needs anyway: Firebase Auth (an
+ * anonymous session, so Firestore will answer) and Firestore (the roster and
+ * each person's PBKDF2 verifier).
  */
-const CALL_TIMEOUT_MS = 15_000;
-
-const callVerifyBranchPin = httpsCallable(functions, 'verifyBranchPin', {
-  timeout: CALL_TIMEOUT_MS,
-});
-
-/** Reject rather than hang, whatever the SDK decides to do. */
-const withTimeout = (promise, ms = CALL_TIMEOUT_MS) =>
-  Promise.race([
-    promise,
-    new Promise((unused, reject) =>
-      setTimeout(() => {
-        const error = new Error('The server did not answer in time.');
-        error.code = 'deadline-exceeded';
-        reject(error);
-      }, ms),
-    ),
-  ]);
 
 export const DEV_FALLBACK = import.meta.env.VITE_ALLOW_CLIENT_PUNCH === 'true';
 
 /**
  * Why an anonymous sign-in was refused, in terms someone can act on.
  *
- * Everything that was not "Anonymous is switched off" used to come back as one
- * generic "cannot reach the server", which is a sentence about the network for
- * three failures that have nothing to do with the network and each have a
- * different fix. They surface the first time a build is put on a real domain,
- * which is exactly when the reader has least idea where to look:
+ * Each of these has a different fix, and none of the first three is about the
+ * network, which is what a generic "cannot reach the server" would suggest:
  *
- *   unauthorized-domain  the site's address is not on Firebase's list
- *   api-key-not-valid    the key in this build is wrong or missing — on a
- *                        hosted build that means the environment variable
- *   network-request-failed  genuinely blocked or offline
+ *   anonymous-disabled     Authentication → Sign-in method → Anonymous is off
+ *   domain-not-authorised  the site's address is not on Firebase's list
+ *   bad-api-key            the key in this build is wrong or missing
+ *   sign-in-failed         genuinely blocked or offline
  *
  * Firebase is inconsistent about which code it raises for a disabled Anonymous
  * provider, hence the two spellings — see firebase/flutterfire#2935.
@@ -78,147 +51,32 @@ const anonymousFailure = (error) => {
   return 'sign-in-failed';
 };
 
-/**
- * Development PINs, per branch.
- *
- * `VITE_DEV_BRANCH_PINS=win:1111,pwint:2222,yangon:3333` gives each shop its
- * real PIN while testing locally, so the tablet behaves the way it will once
- * the Functions are deployed. Without this the whole point of three different
- * PINs is lost the moment you run it on your own machine — you type the Win PIN
- * at the Win kiosk, it is refused, and nothing on screen explains why.
- *
- * The values live in `.env`, which is gitignored. This repository is public and
- * a branch PIN must never be committed to it.
- *
- * `VITE_DEV_BRANCH_PIN` stays supported as the single-PIN shorthand, and the
- * whole thing falls back to 1234 so a fresh clone runs with no configuration.
- */
-const DEV_BRANCH_PINS = (() => {
-  const map = {};
-  for (const pair of String(import.meta.env.VITE_DEV_BRANCH_PINS ?? '').split(',')) {
-    const [id, pin] = pair.split(':').map((part) => part?.trim());
-    if (id && pin) map[id] = pin;
-  }
-  return map;
-})();
-
-const DEV_SHARED_PIN = import.meta.env.VITE_DEV_BRANCH_PIN || '1234';
-
-const devPinFor = (branchId) => DEV_BRANCH_PINS[branchId] ?? DEV_SHARED_PIN;
-
-/**
- * Which branch ids have their OWN entry in `VITE_DEV_BRANCH_PINS` — never the
- * PINs themselves. `/attendance/diagnostics` has no sign-in gate (that is the
- * whole point of it), so it can show THIS safely to explain a refused PIN —
- * e.g. a branch id that does not match any key here silently falls back to
- * the shared PIN, which looks identical to "wrong PIN" at the keypad — but it
- * must never be able to show what any actual PIN is.
- */
-export const DEV_BRANCH_PIN_IDS = Object.keys(DEV_BRANCH_PINS);
-
-/**
- * @returns {Promise<{ok: boolean, reason?: string, ttlMinutes?: number}>}
- */
-export async function unlockKiosk(branchId, pin) {
-  let result;
-
-  try {
-    const response = await withTimeout(callVerifyBranchPin({ branchId, pin }));
-    result = response.data;
-  } catch (error) {
-    if (error?.code === 'deadline-exceeded' || error?.code === 'functions/deadline-exceeded') {
-      return { ok: false, reason: 'timeout' };
-    }
-    if (DEV_FALLBACK && isCallableUnavailable(error)) {
-      console.warn(
-        '[attendance] verifyBranchPin is not deployed — using the development PIN and an ' +
-          'unauthenticated kiosk session. Never ship with VITE_ALLOW_CLIENT_PUNCH enabled.',
-      );
-      if (pin !== devPinFor(branchId)) return { ok: false, reason: 'wrong-pin' };
-
-      /* Without SOME Firebase identity every Firestore read is refused and the
-         kiosk shows an empty roster with "Missing or insufficient permissions".
-         The real path mints a branch-scoped custom token; there is no way to
-         do that from a browser, so the development path signs in anonymously
-         and the development rules accept any signed-in reader.
-         This is weaker than the real thing by design — an anonymous session
-         carries no branch claim, so the rules cannot scope it to one shop. It
-         is a way to run the app before the Functions exist, not a posture to
-         deploy. */
-      try {
-        await signInAnonymously(auth);
-      } catch (anonError) {
-        /* Told apart from the generic 'unavailable' below on purpose: reaching
-           here means the PIN already matched, which is worth distinguishing on
-           the diagnostics page from a request that never got that far. */
-        return {
-          ok: false,
-          reason: anonymousFailure(anonError),
-          message: anonError?.message,
-        };
-      }
-      return { ok: true, ttlMinutes: 840, dev: true };
-    }
-    if (error?.code === 'functions/resource-exhausted') return { ok: false, reason: 'rate-limited' };
-    if (error?.code === 'functions/permission-denied') return { ok: false, reason: 'wrong-pin' };
-    if (isCallableUnavailable(error)) {
-      /* The function simply is not there. Say that, rather than blaming the
-         network — the fix is a deploy, not a better signal. */
-      console.error(
-        '[attendance] The verifyBranchPin function is not deployed. Deploy it, or set ' +
-          'VITE_ALLOW_CLIENT_PUNCH=true (with VITE_DEV_BRANCH_PINS) to test locally.',
-      );
-      return { ok: false, reason: 'not-deployed' };
-    }
-    return { ok: false, reason: 'unavailable', message: error?.message };
-  }
-
-  if (!result?.ok) return result ?? { ok: false, reason: 'wrong-pin' };
-
-  if (result.token) {
-    try {
-      await signInWithCustomToken(auth, result.token);
-    } catch (signInError) {
-      return { ok: false, reason: 'unavailable', message: signInError?.message };
-    }
-  }
-
-  return result;
-}
-
 /** Drop the kiosk identity as well as the local session. */
 export async function lockKiosk() {
   await signOut(auth).catch(() => {});
 }
 
 /**
- * The same four digits, asked a second question: is this anybody's OWN PIN?
+ * Everything the PIN check needs that does NOT depend on the PIN.
  *
- * The unlock keypad tries the branch PIN first. When that is not it, this runs,
- * so one staff member can walk up to a locked tablet, type their own PIN, and
- * land on their own screen without anyone having to unlock the shared roster
- * for them first.
+ * This is the slow part — a sign-in round trip, the roster query, then one
+ * read per person for their verifier — and none of it has to wait for the
+ * fourth digit. The keypad starts this the moment a shop is chosen, so by the
+ * time somebody has typed four digits the network is already done and only
+ * the hashing is left.
  *
- * It needs an identity before it can read anything — the verifier documents
- * are gated on `signedIn()` — so it signs in anonymously BEFORE it knows
- * whether the PIN belongs to anyone. Worth being plain about what that costs:
- * under the development rules the branch PIN was never a security boundary
- * anyway. Any signed-in session may read every roster, and anonymous sign-in
- * is enabled, so anyone who can open the page could already have obtained one
- * from a console. The branch PIN keeps the roster off the screen; it does not
- * keep it out of the database. Deploying verifyBranchPin is what changes that,
- * by scoping a kiosk token to one branch.
+ * Signing in before anyone has typed anything is a deliberate trade, and worth
+ * being plain about: under the development rules an anonymous session can read
+ * every roster, but anonymous sign-in is enabled for this project, so anyone
+ * who can open the page could already mint one from a browser console. The
+ * session the keypad holds grants nothing a visitor could not take for
+ * themselves. What protects a PIN is the PBKDF2 cost, not the session.
  *
- * A PIN that matches nobody leaves no trace: the anonymous session this
- * created is signed out again, so a wrong guess does not quietly hand out a
- * readable identity.
- *
- * @returns {Promise<{ok: boolean, staff?: object, reason?: string, message?: string}>}
+ * @returns {Promise<{ok:true, branchId:string, candidates:Array<{person:object, record:object}>, at:number}
+ *                 | {ok:false, reason:string, message?:string}>}
  */
-export async function unlockWithStaffPin(branchId, pin) {
-  const hadSessionAlready = Boolean(auth.currentUser);
-
-  if (!hadSessionAlready) {
+export async function prepareStaffPinCheck(branchId) {
+  if (!auth.currentUser) {
     try {
       await signInAnonymously(auth);
     } catch (error) {
@@ -230,26 +88,111 @@ export async function unlockWithStaffPin(branchId, pin) {
   try {
     roster = await fetchBranchStaff(branchId);
   } catch (error) {
-    if (!hadSessionAlready) await signOut(auth).catch(() => {});
     if (error?.code === 'permission-denied') return { ok: false, reason: 'rules-not-published' };
     return { ok: false, reason: 'unavailable', message: error?.message };
   }
 
-  /* Every candidate is derived at once rather than in turn. Each check is a
-     deliberately slow PBKDF2, and a shop of fifteen done one after another is
-     a keypad that appears to have frozen. */
-  const checked = await Promise.all(
-    roster.map(async (person) => ({
-      person,
-      ok: (await verifyStaffPin(person.id, pin).catch(() => ({ ok: false }))).ok,
-    })),
+  /* All at once rather than in turn: fifteen sequential reads on a shop's
+     mobile connection is most of a second spent waiting for nothing. Each
+     failure is kept rather than swallowed — see below. */
+  const records = await Promise.all(
+    roster.map(async (person) => {
+      try {
+        return { person, record: await fetchStaffVerifier(person.id) };
+      } catch (error) {
+        return { person, error };
+      }
+    }),
   );
 
-  const match = checked.find((entry) => entry.ok);
-  if (!match) {
-    if (!hadSessionAlready) await signOut(auth).catch(() => {});
-    return { ok: false, reason: 'wrong-pin' };
+  /* A read that FAILED is not a person without a PIN. Treating it as one
+     would mean a connection that drops halfway through the roster tells the
+     people whose reads were lost that their correct PIN is wrong. */
+  const failed = records.filter((entry) => entry.error);
+  if (failed.length) {
+    /* Every one refused, on a roster that is not empty, means the rules that
+       let a kiosk read verifiers were never published. */
+    if (failed.every((entry) => entry.error?.code === 'permission-denied')) {
+      return { ok: false, reason: 'rules-not-published' };
+    }
+    return { ok: false, reason: 'unavailable', message: failed[0].error?.message };
   }
 
-  return { ok: true, staff: match.person };
+  return {
+    ok: true,
+    branchId,
+    /* No record means no PIN has been set for that person yet. */
+    candidates: records.filter((entry) => entry.record),
+    at: Date.now(),
+  };
+}
+
+/**
+ * Check a typed PIN against prepared candidates. Only hashing happens here.
+ *
+ * Every candidate is derived in parallel. Each derivation is deliberately slow
+ * (PBKDF2, 210 000 iterations), and one after another would make a shop of
+ * fifteen look frozen.
+ */
+export async function matchStaffPin(prepared, pin) {
+  const checked = await Promise.all(
+    prepared.candidates.map(async ({ person, record }) => ({
+      person,
+      ok: await verifyPin(pin, record).catch(() => false),
+    })),
+  );
+  return pickStaffMatch(checked);
+}
+
+/**
+ * One-shot version for callers with nothing prepared: the diagnostics page,
+ * and the admin screens' clash check.
+ *
+ * @returns {Promise<{ok:boolean, staff?:object, reason?:string, message?:string, timings?:object}>}
+ */
+export async function unlockWithStaffPin(branchId, pin) {
+  const started = performance.now();
+  const prepared = await prepareStaffPinCheck(branchId);
+  const preparedAt = performance.now();
+  if (!prepared.ok) return prepared;
+  const result = await matchStaffPin(prepared, pin);
+  return {
+    ...result,
+    timings: {
+      networkMs: Math.round(preparedAt - started),
+      hashingMs: Math.round(performance.now() - preparedAt),
+      people: prepared.candidates.length,
+    },
+  };
+}
+
+/**
+ * Who else in this shop already answers to this PIN?
+ *
+ * Asked by the admin screens before saving, using the same check the keypad
+ * uses — so "would this PIN be ambiguous at the kiosk" is answered by the
+ * kiosk's own logic, not a second opinion that could drift from it.
+ *
+ * Returns null when the check cannot run (rules not published, offline). That
+ * fails open on purpose: refusing to save a PIN because a safety check could
+ * not reach the server would lock an admin out of fixing anything. The keypad
+ * still refuses an ambiguous PIN, so the worst case is a clash that is caught
+ * at the door rather than at the desk.
+ *
+ * @returns {Promise<object|null>} the person already using it, or null
+ */
+export async function findStaffWithPin(branchId, pin, { exceptStaffId = null } = {}) {
+  const prepared = await prepareStaffPinCheck(branchId).catch(() => null);
+  if (!prepared?.ok) return null;
+  const others = {
+    ...prepared,
+    candidates: prepared.candidates.filter(({ person }) => person.id !== exceptStaffId),
+  };
+  const checked = await Promise.all(
+    others.candidates.map(async ({ person, record }) => ({
+      person,
+      ok: await verifyPin(pin, record).catch(() => false),
+    })),
+  );
+  return checked.find((entry) => entry.ok)?.person ?? null;
 }
