@@ -18,6 +18,14 @@ import { formatDuration } from '../../lib/time';
  * It also shows the consequence before the punch, in the unit that gets paid:
  * whole hours, rounded up. "You worked 1h 1m past the end" and "paid as 2
  * hours" are different numbers and both belong on screen.
+ *
+ * It is never greyed out for being "not eligible yet", and it appears on
+ * clock-in as well as clock-out. It used to do both, so whether somebody saw a
+ * usable switch depended on whether they happened to be clocking in or out,
+ * and on the time — which from the shop floor looked like the switch working
+ * for some staff and not others. What gets PAID did not change: pressing it
+ * early records the claim, and the line underneath says plainly that nothing
+ * is owed until the threshold, so an early press is never mistaken for hours.
  */
 
 export default function OvertimeToggle({
@@ -36,15 +44,26 @@ export default function OvertimeToggle({
   /* On the unlock keypad nobody has identified themselves yet, so there is no
      shift to measure and no figure to show. The switch still has to be there
      and still has to be tappable — the claim is made before the PIN, and the
-     PIN is what says who is claiming. The real eligibility is worked out once
-     the person is known, and an unclaimable one is simply ignored. */
+     PIN is what says who is claiming. It is carried onto whichever punch that
+     person makes next, clock-in or clock-out. */
   unknownEligibility = false,
+  /* 'check-in': nothing to measure yet — turning it on is remembered on the
+     day's record and the switch is already on at clock-out.
+     'check-out': measured against the shift as usual. */
+  phase = 'check-out',
+  /* "17:45" — the clock-out time after which overtime applies. Shown so that
+     nobody reads a switched-on toggle as hours earned. */
+  appliesAfter = null,
 }) {
   const { t } = useTranslation();
 
-  const eligible = eligibleMinutes > 0;
-  const isDisabled = disabled || (!eligible && !unknownEligibility);
+  const atCheckIn = phase === 'check-in';
+  const eligible = !atCheckIn && eligibleMinutes > 0;
+  /* Only ever disabled by the caller (a punch in flight, a location block),
+     never by the clock. */
+  const isDisabled = disabled;
   const capped = capMinutes != null && eligibleMinutes > capMinutes;
+  const threshold = appliesAfter ? ` ${t('overtime.appliesAfter', { time: appliesAfter })}` : '';
 
   const explain = () => {
     if (reason === 'not-past-shift-end') return t('overtime.notPastShiftEnd');
@@ -58,9 +77,7 @@ export default function OvertimeToggle({
       className={`rounded-3xl border-2 p-1 transition-all duration-400 ease-expo ${
         checked
           ? 'border-ot bg-ot-soft shadow-glow-ot'
-          : eligible || unknownEligibility
-            ? 'border-ot/35 bg-ot-soft/40'
-            : 'border-line bg-surface-sunken'
+          : 'border-ot/35 bg-ot-soft/40'
       }`}
     >
       <button
@@ -104,8 +121,17 @@ export default function OvertimeToggle({
                   </strong>
                 ) : null}
               </>
+            ) : atCheckIn ? (
+              <>
+                {t('overtime.atCheckIn')}
+                {threshold}
+              </>
             ) : (
-              explain()
+              <>
+                {explain()}
+                {/* Once switched on, the panel below says it — once is enough. */}
+                {checked ? null : threshold}
+              </>
             )}
           </span>
         </span>
@@ -121,6 +147,17 @@ export default function OvertimeToggle({
           />
         </span>
       </button>
+
+      {/* Switched on, nothing owed yet: say so in the panel where the hours
+          would otherwise be, rather than leave an orange "on" switch to be
+          read as overtime earned. */}
+      {checked && !eligible && !atCheckIn && !unknownEligibility && appliesAfter ? (
+        <div className="animate-fade-up px-4 pb-4">
+          <p className="rounded-2xl bg-surface-card/70 px-4 py-3 text-xs leading-relaxed text-ink-muted">
+            {t('overtime.nothingYet', { time: appliesAfter })}
+          </p>
+        </div>
+      ) : null}
 
       {checked && eligible ? (
         <div className="animate-fade-up px-4 pb-4">

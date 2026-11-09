@@ -114,12 +114,15 @@
     "workedPast": "You worked {{duration}} past the end of your shift.",
     "willBeLogged": "Will be logged as overtime",
     "paidInHours": "Paid as {{hours}}h",
-    "notPastShiftEnd": "Your shift has not finished yet, so there is no overtime to claim.",
+    "notPastShiftEnd": "Your shift has not finished yet.",
     "withinGrace": "The first {{count}} minutes after the shift end are not counted as overtime.",
     "sessionOpen": "Overtime is worked out when you clock out.",
     "none": "No overtime available for this shift.",
     "cappedNotice": "That is over the {{cap}} daily limit, so {{cap}} will be recorded and a supervisor will review the rest.",
-    "beforeYouKnowWho": "Clocking out after your shift ended? Claim it here."
+    "beforeYouKnowWho": "Staying late today, or clocking out after your shift? Turn this on first.",
+    "appliesAfter": "Overtime applies if you clock out after {{time}}.",
+    "atCheckIn": "Staying late today? Turn it on now and it will already be on when you clock out.",
+    "nothingYet": "Nothing to pay yet: overtime applies only if you clock out after {{time}}. Your claim is still recorded."
   },
   "location": {
     "finding": "Finding you…",

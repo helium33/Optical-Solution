@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import Modal from '../ui/Modal';
@@ -10,7 +10,7 @@ import { roleLabel } from '../../config/roles';
 import { verifyStaffPin } from '../../services/staff.service';
 import { ADMIN_SEQUENCE } from '../../services/adminReveal';
 import { useNow } from '../../hooks/useNow';
-import { computeWorkSession } from '../../lib/time';
+import { computeWorkSession, formatClock, overtimeAppliesAfter } from '../../lib/time';
 
 /**
  * Prove who you are before your own records open.
@@ -43,12 +43,17 @@ export default function StaffSignInDialog({ open, onClose, staff, log, branch, o
   const [overtime, setOvertime] = useState(false);
   const now = useNow(1000);
 
+  /* Read through a ref so a log update cannot re-run the reset below. */
+  const intentRef = useRef(false);
+  intentRef.current = Boolean(log?.checkIn?.at) && !log?.checkOut?.at && log?.overtimeIntent === true;
+
   useEffect(() => {
     if (!open) return;
     setPin('');
     setError(null);
     setBusy(false);
-    setOvertime(false);
+    /* Already on if it was switched on at this person's clock-in. */
+    setOvertime(intentRef.current);
   }, [open, staff?.id]);
 
   /* This keypad is now the first one a staff member meets, so the overtime
@@ -57,7 +62,8 @@ export default function StaffSignInDialog({ open, onClose, staff, log, branch, o
      sequence. The claim rides along to the punch rather than being asked for
      a second time on the next screen.
 
-     Only on the way out — there is no overtime to claim on a clock-in. */
+     Shown on the way in as well: there is nothing to measure yet, but saying
+     "staying late today" at clock-in is remembered for the clock-out. */
   const isCheckOut = Boolean(log?.checkIn?.at) && !log?.checkOut?.at;
   const shift = log?.shiftSnapshot ?? branch?.shift;
 
@@ -72,6 +78,12 @@ export default function StaffSignInDialog({ open, onClose, staff, log, branch, o
       now,
     });
   }, [isCheckOut, log, branch, shift, now]);
+
+  const appliesAfter = useMemo(() => {
+    if (!branch || !shift) return null;
+    const threshold = overtimeAppliesAfter(isCheckOut ? log?.checkIn?.at : now, shift, branch.timezone);
+    return threshold ? formatClock(threshold, branch.timezone) : null;
+  }, [branch, shift, isCheckOut, log?.checkIn?.at, now]);
 
   const submit = useCallback(
     async (value) => {
@@ -124,19 +136,19 @@ export default function StaffSignInDialog({ open, onClose, staff, log, branch, o
       ) : (
         <>
           {/* ---- OVERTIME: directly above the keypad, decided before the PIN ---- */}
-          {isCheckOut ? (
-            <div className="mb-5">
-              <OvertimeToggle
-                checked={overtime}
-                onChange={setOvertime}
-                eligibleMinutes={eligibility?.overtime.eligibleMinutes ?? 0}
-                billedHours={eligibility?.overtimeHours ?? 0}
-                reason={eligibility?.overtime.reason ?? null}
-                graceMinutes={shift?.overtimeGraceMinutes}
-                capMinutes={shift?.maxOvertimeMinutes}
-              />
-            </div>
-          ) : null}
+          <div className="mb-5">
+            <OvertimeToggle
+              checked={overtime}
+              onChange={setOvertime}
+              phase={isCheckOut ? 'check-out' : 'check-in'}
+              appliesAfter={appliesAfter}
+              eligibleMinutes={eligibility?.overtime.eligibleMinutes ?? 0}
+              billedHours={eligibility?.overtimeHours ?? 0}
+              reason={eligibility?.overtime.reason ?? null}
+              graceMinutes={shift?.overtimeGraceMinutes}
+              capMinutes={shift?.maxOvertimeMinutes}
+            />
+          </div>
 
           <PinPad value={pin} onChange={onPinChange} length={4} error={Boolean(error)} />
           {error ? (

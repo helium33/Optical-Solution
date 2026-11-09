@@ -205,6 +205,10 @@ async function submitPunchUnverified(payload) {
         status: computed.status,
         minutes: zeroMinutes(),
         overtime: { claimed: false, eligibleMinutes: 0, grantedMinutes: 0, capped: false, reason: null },
+        /* "Staying late today", said at clock-in. Kept apart from `overtime`,
+           which reports read as a real claim: this only pre-sets the switch
+           at clock-out, where the claim is actually made and measured. */
+        overtimeIntent: Boolean(overtimeRequested),
         shiftSnapshot: branch.shift,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

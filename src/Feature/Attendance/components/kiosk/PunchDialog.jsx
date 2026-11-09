@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LuFingerprint, LuCheck, LuTriangleAlert } from 'react-icons/lu';
@@ -16,7 +16,13 @@ import { submitPunch, PUNCH, AUTH_METHOD } from '../../services/attendance.servi
 import { INTENT, ACCESS } from '../../lib/accessPolicy';
 import { BYPASS_TAG } from '../../config/devMode';
 import { ADMIN_SEQUENCE } from '../../services/adminReveal';
-import { computeWorkSession, formatClock, formatDuration, ATTENDANCE_STATUS } from '../../lib/time';
+import {
+  computeWorkSession,
+  formatClock,
+  formatDuration,
+  overtimeAppliesAfter,
+  ATTENDANCE_STATUS,
+} from '../../lib/time';
 import { roleLabel } from '../../config/roles';
 
 /**
@@ -79,9 +85,17 @@ export default function PunchDialog({
   const now = useNow(1000);
   const webauthn = useWebAuthn();
 
+  /* Overtime switched on at clock-in is remembered on the day's record, so
+     the switch is already on when the same person comes to clock out. Read
+     through a ref, not an effect dependency: the log updates the instant a
+     punch lands, and resetting the dialog on that update would throw away
+     the confirmation screen. */
+  const intentRef = useRef(false);
+  intentRef.current = isCheckOut && log?.overtimeIntent === true;
+
   const [step, setStep] = useState(STEP.ENTRY);
   const [pin, setPin] = useState('');
-  const [overtime, setOvertime] = useState(initialOvertime);
+  const [overtime, setOvertime] = useState(() => initialOvertime || intentRef.current);
   const [error, setError] = useState(null);
   /* Whether `error` means the server side of the punch could not be reached
      at all, as opposed to a rejection FROM a server that IS there (a wrong
@@ -95,7 +109,7 @@ export default function PunchDialog({
     if (!open) return;
     setStep(STEP.ENTRY);
     setPin('');
-    setOvertime(initialOvertime);
+    setOvertime(initialOvertime || intentRef.current);
     setError(null);
     setErrorUnreachable(false);
     setSubmitted(null);
@@ -144,6 +158,15 @@ export default function PunchDialog({
     });
   }, [isCheckOut, log, branch, shift, now]);
 
+  /** "17:45": the clock-out time after which overtime applies, for this session. */
+  const appliesAfter = useMemo(() => {
+    if (!branch || !shift) return null;
+    const threshold = overtimeAppliesAfter(isCheckOut ? log?.checkIn?.at : now, shift, branch.timezone);
+    return threshold ? formatClock(threshold, branch.timezone) : null;
+    /* `now` only matters on a clock-in, and only to find the business day —
+       minute-level changes are harmless, so the per-second tick is fine. */
+  }, [branch, shift, isCheckOut, log?.checkIn?.at, now]);
+
   /**
    * Claiming overtime exempts the clock-out from the shop-network check — the
    * router is often off by the time a late shift ends. The geofence still
@@ -172,7 +195,9 @@ export default function PunchDialog({
           staffId: staff.id,
           staff: { name: staff.name, role: staff.role },
           branch: { shift: branch.shift, timezone: branch.timezone },
-          overtimeRequested: kind === PUNCH.CHECK_OUT ? overtime : false,
+          /* On a clock-in this is the intent, kept on the record for the
+             clock-out; on a clock-out it is the claim itself. */
+          overtimeRequested: overtime,
           auth,
           position: geo.position,
           geo: { distance: geo.fence?.distance ?? null, verdict: geo.fence?.verdict ?? null },
@@ -305,20 +330,22 @@ export default function PunchDialog({
             </dl>
           ) : null}
 
-          {/* ---- OVERTIME: directly above the keypad, decided before the PIN ---- */}
-          {isCheckOut ? (
-            <OvertimeToggle
-              checked={overtime}
-              onChange={setOvertime}
-              eligibleMinutes={eligibility?.overtime.eligibleMinutes ?? 0}
-              billedHours={eligibility?.overtimeHours ?? 0}
-              reason={eligibility?.overtime.reason ?? null}
-              graceMinutes={shift?.overtimeGraceMinutes}
-              capMinutes={shift?.maxOvertimeMinutes}
-              disabled={blocked || step === STEP.WORKING}
-              commitsWithoutPin={Boolean(preVerifiedPin)}
-            />
-          ) : null}
+          {/* ---- OVERTIME: directly above the keypad, decided before the PIN ----
+              On clock-in as well as clock-out, for everyone. See OvertimeToggle
+              for why it is never hidden or greyed out by the clock. */}
+          <OvertimeToggle
+            checked={overtime}
+            onChange={setOvertime}
+            phase={isCheckOut ? 'check-out' : 'check-in'}
+            appliesAfter={appliesAfter}
+            eligibleMinutes={eligibility?.overtime.eligibleMinutes ?? 0}
+            billedHours={eligibility?.overtimeHours ?? 0}
+            reason={eligibility?.overtime.reason ?? null}
+            graceMinutes={shift?.overtimeGraceMinutes}
+            capMinutes={shift?.maxOvertimeMinutes}
+            disabled={blocked || step === STEP.WORKING}
+            commitsWithoutPin={Boolean(preVerifiedPin)}
+          />
 
           {/* ---- location gate ---- */}
           {blocked ? (
