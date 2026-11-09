@@ -18,6 +18,8 @@ import {
   formatDuration,
   toDecimalHours,
   minutesToBilledHours,
+  overtimeAppliesAfter,
+  formatClock,
   dayKeyRange,
   ATTENDANCE_STATUS,
 } from '../lib/time';
@@ -25,6 +27,7 @@ import { workingDaysInMonth, summariseMonth } from '../lib/monthly';
 import { formatMonth } from '../i18n/months';
 import { BRANCHES, BRANCH_PINS } from '../config/branches';
 import { pickStaffMatch } from '../lib/pinMatch';
+import { mergeBranchRecords } from '../lib/branchRecords';
 import { verifyPin, createPinRecord } from '../lib/crypto';
 import {
   decodePlusCode,
@@ -696,6 +699,79 @@ test('PIN MATCH: two people sharing a PIN is refused, never guessed', () => {
   assert.equal(r.reason, 'pin-ambiguous');
   assert.equal(r.count, 2);
   assert.equal(r.staff, undefined);
+});
+
+/* ======================= branch records (Firestore) ===================== */
+
+test('BRANCH RECORDS: saving one shop never hides the other two', () => {
+  /* The first save of Win's shift creates exactly one document. Pwint and
+     Yangon have none, and must still be on the kiosk. */
+  const merged = mergeBranchRecords([
+    { id: 'win', data: { shift: { end: '18:30' } } },
+  ]);
+  assert.deepEqual(merged.map((b) => b.id), ['win', 'pwint', 'yangon']);
+  assert.equal(merged.find((b) => b.id === 'pwint').name, BRANCHES.pwint.name);
+  assert.equal(merged.find((b) => b.id === 'yangon').shift.end, BRANCHES.yangon.shift.end);
+});
+
+test('BRANCH RECORDS: a saved shift end keeps everything else about the shift', () => {
+  const win = mergeBranchRecords([{ id: 'win', data: { shift: { end: '18:30' } } }])[0];
+  assert.equal(win.shift.end, '18:30');
+  assert.equal(win.shift.start, BRANCHES.win.shift.start);
+  assert.equal(win.shift.overtimeGraceMinutes, BRANCHES.win.shift.overtimeGraceMinutes);
+  /* And the pin, which lives on a different nested object. */
+  assert.equal(win.geofence.lat, BRANCHES.win.geofence.lat);
+});
+
+test('BRANCH RECORDS: no documents at all is the built-in list', () => {
+  const merged = mergeBranchRecords([]);
+  assert.deepEqual(merged.map((b) => b.id), ['win', 'pwint', 'yangon']);
+  assert.equal(merged[0].shift.end, BRANCHES.win.shift.end);
+});
+
+test('BRANCH RECORDS: a stored kiosk PIN never reaches the app', () => {
+  const win = mergeBranchRecords([{ id: 'win', data: { kioskPin: 'should-not-leak' } }])[0];
+  assert.equal(win.kioskPin, undefined);
+});
+
+/* ========================= overtime threshold ========================== */
+
+test('OVERTIME: applies after shift end plus the grace, in shop time', () => {
+  /* Win ends 17:30 with a 15-minute grace. 05:00 UTC is 11:30 in Yangon. */
+  const shift = { ...BRANCHES.win.shift, end: '17:30', overtimeGraceMinutes: 15 };
+  const at = overtimeAppliesAfter('2026-09-11T05:00:00Z', shift, 'Asia/Yangon');
+  assert.equal(formatClock(at, 'Asia/Yangon'), '17:45');
+});
+
+test('OVERTIME: the threshold is the one the pay rule actually uses', () => {
+  /* One minute past it earns overtime; exactly on it does not. If these two
+     ever disagree, the screen is telling staff the wrong time. */
+  const shift = { ...BRANCHES.win.shift, end: '17:30', overtimeGraceMinutes: 15 };
+  const tz = 'Asia/Yangon';
+  const checkIn = '2026-09-11T02:30:00Z'; // 09:00 Yangon
+  const threshold = overtimeAppliesAfter(checkIn, shift, tz);
+  const at = (deltaMin) => new Date(threshold.getTime() + deltaMin * 60_000);
+  const run = (checkOutAt) =>
+    computeWorkSession({ checkInAt: checkIn, checkOutAt, shift, timeZone: tz, overtimeRequested: true });
+  assert.equal(run(at(0)).overtime.grantedMinutes, 0);
+  assert.ok(run(at(1)).overtime.grantedMinutes > 0);
+});
+
+test('OVERTIME: an early claim is recorded but pays nothing', () => {
+  /* The switch is now always pressable. Pressing it before the threshold must
+     still pay zero — and say why — rather than invent hours. */
+  const shift = { ...BRANCHES.win.shift, end: '17:30', overtimeGraceMinutes: 15 };
+  const r = computeWorkSession({
+    checkInAt: '2026-09-11T02:30:00Z', // 09:00
+    checkOutAt: '2026-09-11T10:30:00Z', // 17:00, before the shift ends
+    shift,
+    timeZone: 'Asia/Yangon',
+    overtimeRequested: true,
+  });
+  assert.equal(r.overtime.claimed, true);
+  assert.equal(r.overtime.grantedMinutes, 0);
+  assert.equal(r.overtimeHours, 0);
+  assert.equal(r.overtime.reason, 'not-past-shift-end');
 });
 
 /* ============================= report ================================= */

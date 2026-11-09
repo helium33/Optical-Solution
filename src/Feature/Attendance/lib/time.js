@@ -281,6 +281,27 @@ export function computeWorkSession({
 }
 
 /**
+ * The moment after which a clock-out earns overtime: shift end plus the
+ * overtime grace, on the business day the session belongs to.
+ *
+ * Worded carefully on screen, because it is a threshold and not a start:
+ * clock out one minute past it and overtime is counted from the shift END,
+ * grace included (see computeWorkSession). "Applies if you clock out after
+ * 17:45" is true; "counts from 17:45" would undersell it by fifteen minutes.
+ *
+ * @param {Date|string|number} reference  the check-in for an open session, or now
+ * @returns {Date|null}
+ */
+export function overtimeAppliesAfter(reference, shift, timeZone) {
+  if (!reference || !shift) return null;
+  const at = new Date(reference);
+  if (Number.isNaN(at.getTime())) return null;
+  const window = shiftWindow(businessDayKey(at, timeZone), shift, timeZone);
+  if (!window) return null;
+  return new Date(window.end.getTime() + (shift.overtimeGraceMinutes ?? 0) * 60_000);
+}
+
+/**
  * Minutes of overtime -> hours actually paid, rounded up.
  *
  *   0 -> 0     (nothing owed is nothing owed; only a claim of zero rounds to zero)
