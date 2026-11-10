@@ -51,9 +51,96 @@ const anonymousFailure = (error) => {
   return 'sign-in-failed';
 };
 
-/** Drop the kiosk identity as well as the local session. */
+/**
+ * Make sure the tablet has an identity, starting at most one sign-in at a time.
+ *
+ * Called the moment the kiosk opens, not when a PIN is typed, so the one
+ * sign-in a brand-new tablet needs happens while someone is still choosing a
+ * shop. Shared, because two sign-ins racing each other would each mint an
+ * anonymous account and the first would be thrown away.
+ */
+let identityInFlight = null;
+export function ensureKioskIdentity() {
+  if (auth.currentUser) return Promise.resolve({ ok: true });
+  identityInFlight ??= signInAnonymously(auth)
+    .then(() => ({ ok: true }))
+    .catch((error) => ({ ok: false, reason: anonymousFailure(error), message: error?.message }))
+    .finally(() => {
+      identityInFlight = null;
+    });
+  return identityInFlight;
+}
+
+/**
+ * End a kiosk session.
+ *
+ * An ANONYMOUS session is kept. It is the tablet's identity, not a person's —
+ * the person is whoever's PIN matched — and signing it out after every punch
+ * meant the next person paid for a fresh sign-in, two round trips on a mobile
+ * connection, before their PIN could even be checked. It grants nothing a
+ * visitor could not mint for themselves; see prepareStaffPinCheck.
+ *
+ * Anyone else IS signed out. If an administrator's account is signed in on
+ * the shop tablet, leaving it there would leave the admin dashboard one typed
+ * sequence away for whoever walks up next.
+ */
 export async function lockKiosk() {
+  if (auth.currentUser?.isAnonymous) return;
   await signOut(auth).catch(() => {});
+}
+
+/**
+ * The parts of a staff record the kiosk screens use, and nothing else.
+ *
+ * Handed from the keypad to the staff screen, and kept with the stored PIN
+ * directory below, so neither carries more of the record than it needs.
+ */
+export function personSummary(person) {
+  return {
+    id: person.id,
+    name: person.name ?? '',
+    role: person.role ?? null,
+    branchId: person.branchId ?? null,
+    employeeCode: person.employeeCode ?? null,
+    hasBiometrics: Boolean(person.hasBiometrics),
+  };
+}
+
+/* ────────────────────── the stored PIN directory ──────────────────────
+ *
+ * The last directory fetched for a shop, kept on the tablet so a PIN can be
+ * checked the instant it is typed — on a slow line, after a reload, with the
+ * connection down — instead of after a sign-in and two rounds of reads. It is
+ * refreshed in the background every time the keypad is shown; see the keypad.
+ *
+ * What it holds is exactly what Firestore's own offline cache already keeps
+ * on this device for the same reads: names, roles, and each person's PBKDF2
+ * record. No PIN. A PIN still costs the full PBKDF2 to test against it.
+ */
+
+const STORE_PREFIX = 'attendance:pinDirectory:';
+
+export function loadStoredDirectory(branchId) {
+  try {
+    const raw = localStorage.getItem(STORE_PREFIX + branchId);
+    if (!raw) return null;
+    const stored = JSON.parse(raw);
+    if (!Array.isArray(stored?.candidates) || stored.branchId !== branchId) return null;
+    return { ok: true, ...stored, fromStore: true };
+  } catch {
+    return null;
+  }
+}
+
+function storeDirectory(prepared) {
+  try {
+    localStorage.setItem(
+      STORE_PREFIX + prepared.branchId,
+      JSON.stringify({ branchId: prepared.branchId, at: prepared.at, candidates: prepared.candidates }),
+    );
+  } catch {
+    /* Private mode or a full disk: the in-memory copy still works. */
+  }
 }
 
 /**
@@ -76,13 +163,8 @@ export async function lockKiosk() {
  *                 | {ok:false, reason:string, message?:string}>}
  */
 export async function prepareStaffPinCheck(branchId) {
-  if (!auth.currentUser) {
-    try {
-      await signInAnonymously(auth);
-    } catch (error) {
-      return { ok: false, reason: anonymousFailure(error), message: error?.message };
-    }
-  }
+  const identity = await ensureKioskIdentity();
+  if (!identity.ok) return identity;
 
   let roster;
   try {
@@ -118,13 +200,20 @@ export async function prepareStaffPinCheck(branchId) {
     return { ok: false, reason: 'unavailable', message: failed[0].error?.message };
   }
 
-  return {
+  const prepared = {
     ok: true,
     branchId,
     /* No record means no PIN has been set for that person yet. */
-    candidates: records.filter((entry) => entry.record),
+    candidates: records
+      .filter((entry) => entry.record)
+      .map(({ person, record }) => ({
+        person: personSummary(person),
+        record: { hash: record.hash, salt: record.salt, iterations: record.iterations },
+      })),
     at: Date.now(),
   };
+  storeDirectory(prepared);
+  return prepared;
 }
 
 /**

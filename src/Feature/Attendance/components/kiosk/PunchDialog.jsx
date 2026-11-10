@@ -204,7 +204,7 @@ export default function PunchDialog({
           ip: geo.ip,
           intent,
           locationBypass: geo.bypassed ? BYPASS_TAG : null,
-        });
+        }, { log });
 
         setSubmitted({
           kind,
@@ -223,7 +223,7 @@ export default function PunchDialog({
         setPin('');
       }
     },
-    [kind, branch, staff, overtime, geo, preview, intent, isCheckOut, onSubmitted, t],
+    [kind, branch, staff, overtime, geo, preview, intent, isCheckOut, onSubmitted, t, log],
   );
 
   const pinLength = branch?.staffPinLength ?? 4;

@@ -206,6 +206,15 @@ export default function AdminDashboardPage() {
           </p>
         ) : null}
 
+        {/* The figures below are this device's saved copy until the server
+            answers. Said, so nobody reads last visit's numbers as today's. */}
+        {report.fromDevice && view === 'overview' ? (
+          <p className="mb-6 inline-flex items-center gap-2 rounded-2xl bg-surface-sunken px-4 py-2 text-xs font-semibold text-ink-muted" role="status">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-brand-600" aria-hidden="true" />
+            {t('admin.showingSaved')}
+          </p>
+        ) : null}
+
         {view === 'team' ? (
           <section className="pt-6">
             <header className="mb-4">

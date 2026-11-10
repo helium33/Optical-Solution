@@ -14,9 +14,8 @@ import { useGeoFence } from '../hooks/useGeoFence';
 import { useNow } from '../hooks/useNow';
 import { useBranch } from '../config/BranchesProvider';
 import { useFirebaseUser } from '../hooks/useFirebaseUser';
-import { subscribeBranchStaff } from '../services/staff.service';
 import { STAFF_ROLE_ORDER, roleLabel } from '../config/roles';
-import { subscribeDayBoard } from '../services/attendance.service';
+import { watchRoster, watchDayBoard, peekRoster, peekDayBoard } from '../services/liveBoard';
 import { readKioskSession, closeKioskSession, touchKioskSession } from '../services/kioskSession';
 import { lockKiosk } from '../services/verification.service';
 import { businessDayKey, minutesBetween, ATTENDANCE_STATUS } from '../lib/time';
@@ -32,6 +31,7 @@ export default function KioskPage() {
   const { t } = useTranslation();
   const { branchId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { setBranch } = useBranchTheme();
 
   /* Live config: an owner changing the shift end must reach this tablet
@@ -47,14 +47,26 @@ export default function KioskPage() {
     [branch, now],
   );
 
-  const [staff, setStaff] = useState(null);
-  const [logs, setLogs] = useState([]);
+  /* Started from whatever the keypad's live listeners already hold, so a
+     person arriving from the keypad sees their screen on the first render
+     rather than after a round trip. See services/liveBoard.js. */
+  const [staff, setStaff] = useState(() => peekRoster(branchId) ?? null);
+  /* null until today's records have actually arrived — NOT an empty list.
+     An empty list reads as "nobody has clocked in", which put Clock in in
+     front of people who were already clocked in whenever the connection was
+     slow, and tapping it would have overwritten their morning clock-in. */
+  const [logs, setLogs] = useState(() =>
+    branch ? (peekDayBoard(branchId, businessDayKey(new Date(), branch.timezone)) ?? null) : null,
+  );
   const [selected, setSelected] = useState(null);
   /* Tapping a name now asks for that person's PIN first; `session` is who
      proved it, and the PIN they proved. It is state, never storage: the whole
      point is that it does not survive walking away from the tablet. */
   const [signingIn, setSigningIn] = useState(null);
-  const [session, setSession] = useState(null);
+  /* Seeded from the keypad's hand-off, so the person's own screen is on the
+     very first render instead of after the roster has been fetched again —
+     the keypad already found them, and has handed over who they are. */
+  const [session, setSession] = useState(() => sessionFromHandoff(location.state));
   const [loadError, setLoadError] = useState(null);
 
   /**
@@ -66,7 +78,6 @@ export default function KioskPage() {
    * does not re-open somebody's records on a tablet they have walked away
    * from.
    */
-  const location = useLocation();
   /* Captured once, on the first render, because the history entry is wiped
      immediately afterwards and the roster it needs has not loaded yet. */
   const [pendingSignIn, setPendingSignIn] = useState(() =>
@@ -116,7 +127,7 @@ export default function KioskPage() {
       setLoadErrorDetail(null);
       return undefined;
     }
-    return subscribeBranchStaff(branchId, setStaff, (error) => {
+    return watchRoster(branchId, setStaff, (error) => {
       setStaff([]);
       /* A key, not the sentence, so it re-renders in whichever language the
          reader picks next. "Missing or insufficient permissions" is Firebase's
@@ -145,13 +156,19 @@ export default function KioskPage() {
 
   useEffect(() => {
     if (!branchId || !dayKey || !uid) return undefined;
-    return subscribeDayBoard(branchId, dayKey, setLogs, () => setLogs([]));
+    return watchDayBoard(branchId, dayKey, setLogs, () => setLogs([]));
   }, [branchId, dayKey, uid]);
 
   /* The roster is what turns the id the gate handed over into the person the
      dashboard renders, so this waits for it rather than firing on mount. */
   useEffect(() => {
-    if (!pendingSignIn || !staff?.length) return;
+    if (!pendingSignIn) return;
+    /* Already opened from the hand-off itself — nothing to wait for. */
+    if (pendingSignIn.staff) {
+      setPendingSignIn(null);
+      return;
+    }
+    if (!staff?.length) return;
     const person = staff.find((entry) => entry.id === pendingSignIn.staffId);
     if (person) {
       setSession({
@@ -183,7 +200,7 @@ export default function KioskPage() {
 
   const logsById = useMemo(() => {
     const map = new Map();
-    for (const log of logs) map.set(log.staffId, log);
+    for (const log of logs ?? []) map.set(log.staffId, log);
     return map;
   }, [logs]);
 
@@ -229,8 +246,8 @@ export default function KioskPage() {
 
   const lock = useCallback(async () => {
     closeKioskSession();
-    /* Also drop the branch-scoped Firebase token, or the tablet keeps its
-       Firestore read access after the screen says it is locked. */
+    /* Signs out an administrator who was signed in on this tablet. The
+       tablet's own anonymous session is kept — see lockKiosk for why. */
     await lockKiosk();
     navigate('/attendance/kiosk', { replace: true });
   }, [navigate]);
@@ -361,6 +378,7 @@ export default function KioskPage() {
           staff={session.staff}
           branch={branch}
           log={logsById.get(session.staff.id) ?? null}
+          logReady={logs !== null}
           onPunch={() => setSelected(session.staff)}
           onClose={endStaffSession}
         />
@@ -381,6 +399,12 @@ export default function KioskPage() {
       />
     </KioskShell>
   );
+}
+
+/** A person-session opened straight from the keypad's hand-off, or null. */
+function sessionFromHandoff(state) {
+  if (!state?.staff?.id) return null;
+  return { staff: state.staff, pin: state.pin, overtime: state.overtime, fromGate: true };
 }
 
 const TONES = {

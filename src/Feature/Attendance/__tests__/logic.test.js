@@ -28,6 +28,7 @@ import { formatMonth } from '../i18n/months';
 import { BRANCHES, BRANCH_PINS } from '../config/branches';
 import { pickStaffMatch } from '../lib/pinMatch';
 import { mergeBranchRecords } from '../lib/branchRecords';
+import { settleWrite, readFailedWrites, clearFailedWrites } from '../services/writeQueue';
 import { verifyPin, createPinRecord } from '../lib/crypto';
 import {
   decodePlusCode,
@@ -804,6 +805,68 @@ await (async () => {
     results.push(['FAIL', `${name}\n         ${error.message.split('\n')[0]}`]);
   }
 })();
+
+/* settleWrite decides when a punch counts as done. The browser globals it
+   touches only on a late refusal are stood in for here. */
+{
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+  };
+  const events = [];
+  globalThis.window = { dispatchEvent: (e) => events.push(e) };
+  globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init?.detail; } };
+  const quietError = console.error;
+  console.error = () => {};
+
+  const later = (ms, fn) => new Promise((res, rej) => setTimeout(() => fn(res, rej), ms));
+  const cases = [
+    ['WRITE: a fast server answer is reported as acknowledged', async () => {
+      const r = await settleWrite(later(20, (res) => res()), 'fast');
+      assert.equal(r.acknowledged, true);
+    }],
+    ['WRITE: a slow server never holds the person — handed to the queue', async () => {
+      const t0 = Date.now();
+      const r = await settleWrite(later(2000, (res) => res()), 'slow');
+      assert.equal(r.acknowledged, false);
+      assert.ok(Date.now() - t0 < 1000, `waited ${Date.now() - t0} ms`);
+    }],
+    ['WRITE: a refusal inside the window is thrown to the screen', async () => {
+      await assert.rejects(
+        settleWrite(later(20, (res, rej) => rej(Object.assign(new Error('no'), { code: 'permission-denied' }))), 'early'),
+        /no/,
+      );
+      assert.equal(readFailedWrites().length, 0, 'an early refusal is shown, not also queued as a warning');
+    }],
+    ['WRITE: a refusal after the window is recorded and announced', async () => {
+      clearFailedWrites();
+      const r = await settleWrite(
+        later(400, (res, rej) => rej(Object.assign(new Error('denied'), { code: 'permission-denied' }))),
+        'clock-in: Person One, 2026-11-10',
+      );
+      assert.equal(r.acknowledged, false);
+      await new Promise((res) => setTimeout(res, 500));
+      const failed = readFailedWrites();
+      assert.equal(failed.length, 1);
+      assert.equal(failed[0].what, 'clock-in: Person One, 2026-11-10');
+      assert.equal(failed[0].code, 'permission-denied');
+      assert.ok(events.some((e) => e.type === 'attendance:write-failed'));
+    }],
+  ];
+  for (const [name, run] of cases) {
+    try {
+      await run();
+      passed += 1;
+      results.push(['ok', name]);
+    } catch (error) {
+      failed += 1;
+      results.push(['FAIL', `${name}\n         ${error.message.split('\n')[0]}`]);
+    }
+  }
+  console.error = quietError;
+}
 
 for (const [mark, name] of results) {
   console.log(`  ${mark.padEnd(4)}  ${name}`);

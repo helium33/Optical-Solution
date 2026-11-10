@@ -63,33 +63,69 @@ export function useAttendanceReport({
   overtimeOnly = false,
   roster = [],
 }) {
-  const [rows, setRows] = useState(null);
+  /* Everything for the branches and range; role and overtime filters are
+     applied below, on the device. They used to be part of the query, so
+     ticking "Overtime only" re-downloaded the whole range from the server
+     just to throw rows away locally — on a slow line, a spinner for a filter
+     that needs no network at all. */
+  const [allRows, setAllRows] = useState(null);
+  /* True while what is on screen is this device's saved copy and the
+     server's answer has not arrived — so the page can say so. */
+  const [fromDevice, setFromDevice] = useState(false);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     if (!branchIds?.length || !fromKey || !toKey) {
-      setRows([]);
+      setAllRows([]);
+      setFromDevice(false);
       return undefined;
     }
 
     let cancelled = false;
+    let serverAnswered = false;
     setError(null);
+    setFromDevice(false);
 
-    queryAttendance({ branchIds, fromKey, toKey, roles, overtimeOnly })
+    /* What this device already has, at once — then the server's answer
+       replaces it. On a slow line the dashboard shows last visit's figures
+       immediately instead of a spinner, and corrects itself a moment later.
+       An empty or failed cache read changes nothing. */
+    queryAttendance({ branchIds, fromKey, toKey }, { fromCache: true })
+      .then((cached) => {
+        if (!cancelled && !serverAnswered && cached.length) {
+          setAllRows(cached);
+          setFromDevice(true);
+        }
+      })
+      .catch(() => {});
+
+    queryAttendance({ branchIds, fromKey, toKey })
       .then((result) => {
-        if (!cancelled) setRows(result);
+        serverAnswered = true;
+        if (cancelled) return;
+        setAllRows(result);
+        setFromDevice(false);
       })
       .catch((queryError) => {
+        serverAnswered = true;
         if (cancelled) return;
-        setRows([]);
+        setAllRows((current) => current ?? []);
         setError(queryError?.message ?? 'Could not load attendance.');
       });
 
     return () => {
       cancelled = true;
     };
-  }, [branchIds, fromKey, toKey, roles, overtimeOnly, nonce]);
+  }, [branchIds, fromKey, toKey, nonce]);
+
+  const rows = useMemo(() => {
+    if (!allRows) return null;
+    let filtered = allRows;
+    if (roles?.length) filtered = filtered.filter((row) => roles.includes(row.role));
+    if (overtimeOnly) filtered = filtered.filter((row) => (row.overtime?.grantedMinutes ?? 0) > 0);
+    return filtered;
+  }, [allRows, roles, overtimeOnly]);
 
   /**
    * Expected headcount. Without a shift-roster collection, "absent" means
@@ -179,6 +215,7 @@ export function useAttendanceReport({
   return {
     rows: rows ?? [],
     loading: rows === null,
+    fromDevice,
     error,
     daily,
     totals,

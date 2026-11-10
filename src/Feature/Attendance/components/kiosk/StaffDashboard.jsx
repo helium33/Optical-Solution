@@ -36,7 +36,7 @@ const otHours = (row) =>
 /** Long enough to read a month, short enough that walking away is safe. */
 const IDLE_MS = 60_000;
 
-export default function StaffDashboard({ staff, branch, log, onPunch, onClose }) {
+export default function StaffDashboard({ staff, branch, log, logReady = true, onPunch, onClose }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState(null);
 
@@ -63,19 +63,33 @@ export default function StaffDashboard({ staff, branch, log, onPunch, onClose })
 
   useEffect(() => {
     let cancelled = false;
-    queryAttendance({
+    let serverAnswered = false;
+    const range = {
       branchIds: [branch.id],
       fromKey: `${monthKey}-01`,
       toKey: `${monthKey}-31`,
-    })
-      /* Filtered here rather than in the query: adding staffId to the where
-         clause would need a composite index that does not exist, and a single
-         branch-month is a few dozen rows. */
+    };
+    /* Filtered here rather than in the query: adding staffId to the where
+       clause would need a composite index that does not exist, and a single
+       branch-month is a few dozen rows. */
+    const mine = (all) => all.filter((row) => row.staffId === staff.id);
+
+    /* This device's copy first, so the month is on screen at once; the
+       server's answer replaces it when it lands. */
+    queryAttendance(range, { fromCache: true })
+      .then((cached) => {
+        if (!cancelled && !serverAnswered && cached.length) setRows(mine(cached));
+      })
+      .catch(() => {});
+
+    queryAttendance(range)
       .then((all) => {
-        if (!cancelled) setRows(all.filter((row) => row.staffId === staff.id));
+        serverAnswered = true;
+        if (!cancelled) setRows(mine(all));
       })
       .catch(() => {
-        if (!cancelled) setRows([]);
+        serverAnswered = true;
+        if (!cancelled) setRows((current) => current ?? []);
       });
     return () => {
       cancelled = true;
@@ -137,20 +151,30 @@ export default function StaffDashboard({ staff, branch, log, onPunch, onClose })
             />
           </div>
 
-          <button
-            type="button"
-            onClick={() => onPunch(isIn ? PUNCH.CHECK_OUT : PUNCH.CHECK_IN)}
-            className={`flex w-full items-center justify-center gap-2.5 rounded-2xl px-4 py-4 text-base font-bold shadow-soft transition-all duration-300 ease-expo hover:-translate-y-0.5 hover:shadow-lift tap-none ${
-              isIn ? 'bg-ot text-white' : 'bg-brand-600 text-brand-on'
-            }`}
-          >
-            {isIn ? (
-              <LuLogOut className="h-5 w-5" aria-hidden="true" />
-            ) : (
-              <LuLogIn className="h-5 w-5" aria-hidden="true" />
-            )}
-            {isIn ? t('kiosk.clockOut') : t('kiosk.clockIn')}
-          </button>
+          {/* Not shown until today's record is known. "No record yet" and
+              "not loaded yet" look identical, and guessing the first would
+              offer Clock in to someone already clocked in — whose tap would
+              overwrite this morning's clock-in time. */}
+          {logReady ? (
+            <button
+              type="button"
+              onClick={() => onPunch(isIn ? PUNCH.CHECK_OUT : PUNCH.CHECK_IN)}
+              className={`flex w-full items-center justify-center gap-2.5 rounded-2xl px-4 py-4 text-base font-bold shadow-soft transition-all duration-300 ease-expo hover:-translate-y-0.5 hover:shadow-lift tap-none ${
+                isIn ? 'bg-ot text-white' : 'bg-brand-600 text-brand-on'
+              }`}
+            >
+              {isIn ? (
+                <LuLogOut className="h-5 w-5" aria-hidden="true" />
+              ) : (
+                <LuLogIn className="h-5 w-5" aria-hidden="true" />
+              )}
+              {isIn ? t('kiosk.clockOut') : t('kiosk.clockIn')}
+            </button>
+          ) : (
+            <div className="flex w-full items-center justify-center rounded-2xl bg-surface-sunken px-4 py-4">
+              <Spinner size={20} label={t('staffDash.loadingToday')} />
+            </div>
+          )}
         </section>
 
         {/* ---- this month ---- */}
