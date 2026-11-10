@@ -52,13 +52,25 @@ export default function MonthlySummary({
 
   useEffect(() => {
     let cancelled = false;
+    let serverAnswered = false;
     setRows(null);
+    /* This device's copy first, so the table is there at once; the server's
+       answer replaces it. A loader that ignores `fromCache` just loads twice. */
+    Promise.resolve(load({ branchIds, month, roster, timeZone, fromCache: true }))
+      .then((cached) => {
+        if (!cancelled && !serverAnswered && cached?.some((row) => row.presentDays > 0)) {
+          setRows(cached);
+        }
+      })
+      .catch(() => {});
     Promise.resolve(load({ branchIds, month, roster, timeZone }))
       .then((result) => {
+        serverAnswered = true;
         if (!cancelled) setRows(result);
       })
       .catch(() => {
-        if (!cancelled) setRows([]);
+        serverAnswered = true;
+        if (!cancelled) setRows((current) => current ?? []);
       });
     return () => {
       cancelled = true;

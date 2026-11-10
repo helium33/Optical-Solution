@@ -55,7 +55,10 @@
     "viewBranch": "View branch",
     "enterOwnPin": "Type your own PIN for {{branch}}",
     "checkingPin": "Checking your PIN…",
-    "askAdminForPin": "Staff do not need an account. Your PIN comes from an administrator."
+    "askAdminForPin": "Staff do not need an account. Your PIN comes from an administrator.",
+    "failedWritesTitle": "A punch could not be saved",
+    "failedWritesItem": "{{what}} at {{time}} was refused by the server ({{code}}). Tell an administrator — that person may need to punch again.",
+    "failedWritesDismiss": "Dismiss"
   },
   "hierarchy": {
     "title": "Branch structure",
@@ -104,7 +107,8 @@
     "day": "Day",
     "daysWorked": "{{count}} days worked",
     "noRecords": "Nothing recorded this month yet",
-    "autoClose": "This screen closes itself after a minute so the next person does not see your records."
+    "autoClose": "This screen closes itself after a minute so the next person does not see your records.",
+    "loadingToday": "Loading today's record…"
   },
   "overtime": {
     "claim": "Claim overtime",
@@ -259,7 +263,8 @@
     "nameRequired": "A name is required.",
     "pinFourDigits": "The PIN must be exactly 4 digits.",
     "pinReserved": "That PIN is reserved by the system. Choose another.",
-    "pinTaken": "{{name}} already uses this PIN at this branch. Each person needs their own, or the kiosk cannot tell them apart."
+    "pinTaken": "{{name}} already uses this PIN at this branch. Each person needs their own, or the kiosk cannot tell them apart.",
+    "showingSaved": "Showing the copy saved on this device — updating…"
   },
   "monthly": {
     "title": "Monthly summary",

@@ -2,6 +2,7 @@ import {
   documentId,
   getDoc,
   getDocs,
+  getDocsFromCache,
   onSnapshot,
   orderBy,
   query,
@@ -16,6 +17,7 @@ import { functions } from '../config/firebase';
 import { attendanceCol, attendanceDoc, attendanceLogId } from './paths';
 import { computeWorkSession, businessDayKey, zonedTimeToUtc } from '../lib/time';
 import { deviceFingerprint } from '../lib/crypto';
+import { settleWrite } from './writeQueue';
 
 export const PUNCH = { CHECK_IN: 'check_in', CHECK_OUT: 'check_out' };
 export const AUTH_METHOD = { PIN: 'pin', BIOMETRIC: 'biometric' };
@@ -67,14 +69,19 @@ export async function fetchLog(branchId, dayKey, staffId) {
  * (branches x staff x days) — a three-shop month is a few thousand documents,
  * which is cheaper to over-fetch once than to index six ways.
  */
-export async function queryAttendance({
-  branchIds = [],
-  fromKey,
-  toKey,
-  roles = null,
-  overtimeOnly = false,
-  statuses = null,
-} = {}) {
+export async function queryAttendance(
+  {
+    branchIds = [],
+    fromKey,
+    toKey,
+    roles = null,
+    overtimeOnly = false,
+    statuses = null,
+  } = {},
+  /* `fromCache`: answer from this device's copy only, at once, without the
+     network. For a first paint — the server's answer follows. */
+  { fromCache = false } = {},
+) {
   if (!branchIds.length || !fromKey || !toKey) return [];
 
   const constraints = [
@@ -85,7 +92,8 @@ export async function queryAttendance({
   /* `in` caps at 30 values; three branches is comfortably inside it. */
   constraints.unshift(where('branchId', 'in', branchIds.slice(0, 30)));
 
-  const snapshot = await getDocs(query(attendanceCol(), ...constraints));
+  const q = query(attendanceCol(), ...constraints);
+  const snapshot = fromCache ? await getDocsFromCache(q) : await getDocs(q);
   let rows = snapshot.docs.map(shapeLog);
 
   if (roles?.length) rows = rows.filter((row) => roles.includes(row.role));
@@ -119,7 +127,13 @@ const callSubmitPunch = httpsCallable(functions, 'submitPunch');
  * @param {{latitude:number,longitude:number,accuracy:number}} punch.position
  * @param {string|null} punch.ip              client's view, for cross-checking
  */
-export async function submitPunch(punch) {
+/**
+ * @param {object} [context]
+ * @param {object} [context.log]  today's record as the screen already holds it.
+ *   Lets a clock-out skip reading it back from the server first — on a slow
+ *   line that read was a full round trip before the write could even start.
+ */
+export async function submitPunch(punch, { log = null } = {}) {
   const payload = {
     ...punch,
     deviceId: deviceFingerprint(),
@@ -135,7 +149,7 @@ export async function submitPunch(punch) {
      not a fallback case, so the punch was lost. With a VPN the request reached
      Google, failed in a moment and fell back, which is why the app only
      seemed to work on one. */
-  if (ALLOW_CLIENT_PUNCH) return submitPunchUnverified(payload);
+  if (ALLOW_CLIENT_PUNCH) return submitPunchUnverified(payload, log);
 
   const response = await callSubmitPunch(payload);
   return response.data;
@@ -152,7 +166,7 @@ export async function submitPunch(punch) {
  * ones. Leave this off in production; the matching Firestore rule should deny
  * client writes to `attendance` entirely.
  */
-async function submitPunchUnverified(payload) {
+async function submitPunchUnverified(payload, knownLog = null) {
   const { kind, branchId, staffId, staff, branch, overtimeRequested, position, ip } = payload;
 
   console.warn(
@@ -191,7 +205,7 @@ async function submitPunchUnverified(payload) {
       timeZone: timezone,
       now: at,
     });
-    await setDoc(
+    await settleWrite(setDoc(
       attendanceDoc(id),
       {
         branchId,
@@ -214,11 +228,14 @@ async function submitPunchUnverified(payload) {
         updatedAt: serverTimestamp(),
       },
       { merge: true },
-    );
+    ), `clock-in: ${staff.name}, ${dayKey}`);
     return { id, dayKey, kind };
   }
 
-  const existing = await fetchLog(branchId, dayKey, staffId);
+  /* The record the screen already has, when it is the right one; a read only
+     when it is not (another caller, or a session that began yesterday). */
+  const existing =
+    knownLog?.id === id && knownLog?.checkIn?.at ? knownLog : await fetchLog(branchId, dayKey, staffId);
   if (!existing?.checkIn?.at) {
     const error = new Error('No open session to close.');
     error.code = 'failed-precondition';
@@ -234,13 +251,16 @@ async function submitPunchUnverified(payload) {
     now: at,
   });
 
-  await updateDoc(attendanceDoc(id), {
-    checkOut: event,
-    status: computed.status,
-    minutes: minutesOf(computed),
-    overtime: computed.overtime,
-    updatedAt: serverTimestamp(),
-  });
+  await settleWrite(
+    updateDoc(attendanceDoc(id), {
+      checkOut: event,
+      status: computed.status,
+      minutes: minutesOf(computed),
+      overtime: computed.overtime,
+      updatedAt: serverTimestamp(),
+    }),
+    `clock-out: ${staff.name}, ${dayKey}`,
+  );
 
   return { id, dayKey, kind, computed };
 }

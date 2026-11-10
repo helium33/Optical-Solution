@@ -12,9 +12,24 @@ import LanguageToggle from '../components/ui/LanguageToggle';
 import Spinner from '../components/ui/Spinner';
 import { useBranchTheme, HOUSE_THEME } from '../theme/BranchThemeProvider';
 import { useBranches } from '../config/BranchesProvider';
-import { prepareStaffPinCheck, matchStaffPin } from '../services/verification.service';
+import {
+  prepareStaffPinCheck,
+  matchStaffPin,
+  loadStoredDirectory,
+  ensureKioskIdentity,
+} from '../services/verification.service';
 import { openKioskSession } from '../services/kioskSession';
 import { ADMIN_SEQUENCE } from '../services/adminReveal';
+import { watchRoster, watchDayBoard } from '../services/liveBoard';
+import {
+  readFailedWrites,
+  clearFailedWrites,
+  WRITE_FAILED_EVENT,
+} from '../services/writeQueue';
+import { useFirebaseUser } from '../hooks/useFirebaseUser';
+import { useNow } from '../hooks/useNow';
+import { businessDayKey } from '../lib/time';
+import { DEV_MODE } from '../config/devMode';
 
 /**
  * Kiosk sign-in: pick the shop, then type your OWN PIN.
@@ -29,21 +44,75 @@ import { ADMIN_SEQUENCE } from '../services/adminReveal';
  */
 
 /**
- * How long a prepared roster is trusted before the keypad refreshes it.
+ * How old the PIN directory can be before the first keypress refreshes it.
  *
- * A tablet can sit on this screen all day. A minute is short enough that a
- * PIN an admin has just changed is picked up on the next attempt anyway (see
- * the retry in submit), and long enough that a queue of people clocking in at
- * opening time all reuse one fetch.
+ * A refresh never makes anyone wait: the PIN is checked against what the
+ * tablet already holds, and the fresh copy lands in the background. This only
+ * decides how often that background fetch happens — a queue of people
+ * clocking in at opening time shares one.
  */
-const PREPARED_TTL_MS = 60_000;
+const DIRECTORY_TTL_MS = 60_000;
+
+/**
+ * Which shop this tablet is in, remembered.
+ *
+ * A shop tablet does not move between shops. Asking which shop it is in after
+ * every single punch cost a tap, and threw away the PIN data the keypad had
+ * ready — the next person waited for it all to be fetched again.
+ */
+const REMEMBERED_SHOP = 'attendance:kioskShop';
+const rememberShop = (id) => {
+  try {
+    if (id) localStorage.setItem(REMEMBERED_SHOP, id);
+    else localStorage.removeItem(REMEMBERED_SHOP);
+  } catch {
+    /* Not remembered; the picker shows instead. */
+  }
+};
+const rememberedShop = () => {
+  try {
+    return localStorage.getItem(REMEMBERED_SHOP);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Wake the location radio, if permission is already granted.
+ *
+ * The punch needs a GPS fix, and a cold GPS indoors can take many seconds.
+ * Asking for one at the first keypress means it is usually ready by the time
+ * the person reaches the Clock in button; the punch screen then gets it from
+ * the browser's cache instead of starting from cold. Never asked when the
+ * permission is undecided — a permission prompt in the middle of typing a PIN
+ * would be worse than the wait it saves.
+ */
+function warmUpLocation() {
+  if (DEV_MODE || !navigator.geolocation || !navigator.permissions?.query) return;
+  navigator.permissions
+    .query({ name: 'geolocation' })
+    .then((status) => {
+      if (status.state !== 'granted') return;
+      navigator.geolocation.getCurrentPosition(
+        () => {},
+        () => {},
+        { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+      );
+    })
+    .catch(() => {});
+}
 export default function KioskGatePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { branchId: branchParam } = useParams();
   const { setBranch } = useBranchTheme();
 
-  const [selected, setSelected] = useState(branchParam ?? null);
+  const { branches: BRANCH_LIST, get } = useBranches();
+  const [selected, setSelected] = useState(() => {
+    if (branchParam) return branchParam;
+    const remembered = rememberedShop();
+    return BRANCH_LIST.some((entry) => entry.id === remembered) ? remembered : null;
+  });
   const [pin, setPin] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -51,11 +120,23 @@ export default function KioskGatePage() {
   const [overtime, setOvertime] = useState(false);
   /* A ref, not the state, guards re-entry: state is a render behind. */
   const busyRef = useRef(false);
-  /** { branchId, at, promise } for the roster + verifiers, fetched ahead. */
-  const preparedRef = useRef(null);
+  /* Punches the server refused after the person had already left — see
+     writeQueue. Shown here because this is the screen everyone returns to. */
+  const [failedWrites, setFailedWrites] = useState(readFailedWrites);
+  useEffect(() => {
+    const update = () => setFailedWrites(readFailedWrites());
+    window.addEventListener(WRITE_FAILED_EVENT, update);
+    return () => window.removeEventListener(WRITE_FAILED_EVENT, update);
+  }, []);
+  /** The best PIN directory this tablet has for the chosen shop, any age. */
+  const directoryRef = useRef(null);
+  /** { branchId, promise } of a refresh in flight, so callers share it. */
+  const refreshRef = useRef(null);
+  /** The shop on screen right now, for refreshes that land after a change. */
+  const shopRef = useRef(null);
 
-  const { branches: BRANCH_LIST, get } = useBranches();
   const branch = useMemo(() => (selected ? get(selected) : null), [selected, get]);
+  shopRef.current = branch?.id ?? null;
 
   /* Theme follows the selection, and resets to neutral when backing out. */
   useEffect(() => {
@@ -63,41 +144,63 @@ export default function KioskGatePage() {
   }, [branch, setBranch]);
 
   /**
-   * Start — or reuse — the network half of the PIN check.
+   * Fetch a fresh PIN directory in the background; share one if in flight.
    *
-   * This is where the waiting used to happen: sign-in, roster, one verifier
-   * read per person, all after the fourth digit. Started here instead, it runs
-   * while somebody is still typing, which takes longer than the fetch does.
-   *
-   * A failed attempt is never cached, so a dropped connection is retried on
-   * the next keypress rather than remembered.
+   * Nobody waits on this unless the tablet has never had a directory for this
+   * shop, or a PIN missed — see submit. Everything else just uses what the
+   * tablet already holds and lets this land when it lands.
    */
-  const ensurePrepared = useCallback(
-    ({ force = false } = {}) => {
-      if (!branch) return null;
-      const current = preparedRef.current;
-      const fresh =
-        current &&
-        current.branchId === branch.id &&
-        Date.now() - current.at < PREPARED_TTL_MS;
-      if (fresh && !force) return current.promise;
+  const refresh = useCallback(() => {
+    if (!branch) return Promise.resolve(null);
+    const inFlight = refreshRef.current;
+    if (inFlight && inFlight.branchId === branch.id) return inFlight.promise;
 
-      const entry = { branchId: branch.id, at: Date.now(), promise: null };
-      entry.promise = prepareStaffPinCheck(branch.id).then((result) => {
-        if (!result.ok && preparedRef.current === entry) preparedRef.current = null;
+    const branchId = branch.id;
+    const entry = { branchId, promise: null };
+    entry.promise = prepareStaffPinCheck(branchId)
+      .then((result) => {
+        /* Kept only if the keypad is still on the shop it was fetched for. */
+        if (result.ok && shopRef.current === branchId) directoryRef.current = result;
         return result;
+      })
+      .catch(() => ({ ok: false, reason: 'unavailable' }))
+      .finally(() => {
+        if (refreshRef.current === entry) refreshRef.current = null;
       });
-      preparedRef.current = entry;
-      return entry.promise;
-    },
-    [branch],
-  );
+    refreshRef.current = entry;
+    return entry.promise;
+  }, [branch]);
 
-  /* The moment a shop is chosen, before anyone has typed. */
+  /* A brand-new tablet's one sign-in starts while the shop is being chosen. */
   useEffect(() => {
-    if (branch) ensurePrepared();
-    else preparedRef.current = null;
-  }, [branch, ensurePrepared]);
+    ensureKioskIdentity();
+  }, []);
+
+  /* The moment a shop is chosen: what the tablet already holds, at once, and
+     a fresh copy behind it. */
+  useEffect(() => {
+    if (!branch) {
+      directoryRef.current = null;
+      return;
+    }
+    directoryRef.current = loadStoredDirectory(branch.id);
+    refresh();
+  }, [branch, refresh]);
+
+  /* Keep the staff screen's data live from here, so it opens with it. */
+  const { uid } = useFirebaseUser();
+  const minuteTick = useNow(60_000);
+  const todayKey = branch ? businessDayKey(minuteTick, branch.timezone) : null;
+  useEffect(() => {
+    if (!branch || !uid || !todayKey) return undefined;
+    const ignore = () => {};
+    const stopRoster = watchRoster(branch.id, ignore, ignore);
+    const stopBoard = watchDayBoard(branch.id, todayKey, ignore, ignore);
+    return () => {
+      stopRoster();
+      stopBoard();
+    };
+  }, [branch, uid, todayKey]);
 
   /**
    * Submit the moment the fourth digit lands.
@@ -124,31 +227,36 @@ export default function KioskGatePage() {
       setError(null);
 
       try {
-        let prepared = await ensurePrepared();
-        let result = prepared.ok ? await matchStaffPin(prepared, value) : prepared;
+        /* What the tablet already holds, whatever its age. Only a tablet
+           that has never fetched this shop's directory waits for one. */
+        const held = directoryRef.current?.branchId === branch.id ? directoryRef.current : null;
+        const directory = held ?? (await refresh());
+        let result = directory?.ok ? await matchStaffPin(directory, value) : directory;
 
-        /* A miss against data fetched a while ago gets one fresh look before
-           it is called wrong. The likeliest reason a right PIN misses is that
-           an admin set or changed it after this keypad last fetched — and
-           telling someone their brand-new PIN is wrong is the worst possible
-           first experience of it. A genuinely wrong PIN pays one extra round
-           trip, which is no bad thing at a keypad either. */
-        if (!result.ok && result.reason === 'wrong-pin' && Date.now() - prepared.at > 3_000) {
-          prepared = await ensurePrepared({ force: true });
-          result = prepared.ok ? await matchStaffPin(prepared, value) : prepared;
+        /* A miss gets one fresh look before it is called wrong. The likeliest
+           reason a right PIN misses is that an admin set or changed it after
+           the copy this tablet holds — and telling someone their brand-new
+           PIN is wrong is the worst first experience of it. Only a miss pays
+           for the round trip; a match never waits. */
+        if (!result?.ok && result?.reason === 'wrong-pin' && Date.now() - directory.at > 3_000) {
+          const fresh = await refresh();
+          if (fresh?.ok) result = await matchStaffPin(fresh, value);
         }
 
-        if (result.ok) {
+        if (result?.ok) {
           openKioskSession(branch.id, { ttlMinutes: 840 });
           navigate(`/attendance/kiosk/${branch.id}`, {
             replace: true,
-            state: { staffId: result.staff.id, pin: value, overtime },
+            /* The person, not just their id: the staff screen opens with
+               them on its first render instead of fetching the roster again
+               to find out who that id is. */
+            state: { staffId: result.staff.id, staff: result.staff, pin: value, overtime },
           });
           return;
         }
 
         setPin('');
-        setError(errorKeyFor(result.reason));
+        setError(errorKeyFor(result?.reason));
       } catch {
         setPin('');
         setError('errors.generic');
@@ -159,16 +267,20 @@ export default function KioskGatePage() {
         setBusy(false);
       }
     },
-    [branch, navigate, overtime, ensurePrepared],
+    [branch, navigate, overtime, refresh],
   );
 
   const onPinChange = useCallback(
     (next) => {
       setError(null);
       setPin(next);
-      /* First digit: refresh in the background if what we hold is stale, so
-         the fetch overlaps the remaining three keypresses. A no-op otherwise. */
-      if (next.length === 1) ensurePrepared();
+      /* First digit: refresh in the background if what we hold is getting
+         old, and wake the GPS for the punch that is about to follow. */
+      if (next.length === 1) {
+        const held = directoryRef.current;
+        if (!held || Date.now() - held.at > DIRECTORY_TTL_MS) refresh();
+        warmUpLocation();
+      }
       /* The reserved admin sequence is never a PIN. SecretAdminDoor is already
          navigating away; submitting it as well would flash "that is not the
          PIN" on the way out, which is exactly what the reveal looked like
@@ -177,7 +289,7 @@ export default function KioskGatePage() {
       if (next === ADMIN_SEQUENCE) return;
       if (next.length === 4) submit(next);
     },
-    [submit, ensurePrepared],
+    [submit, refresh],
   );
 
   return (
@@ -204,13 +316,43 @@ export default function KioskGatePage() {
           </p>
         </div>
 
+        {failedWrites.length ? (
+          <div className="mb-6 rounded-3xl bg-danger-soft p-4" role="alert">
+            <p className="text-sm font-bold text-danger-ink">{t('kiosk.failedWritesTitle')}</p>
+            <ul className="mt-1.5 space-y-1 text-xs leading-relaxed text-danger-ink/85">
+              {failedWrites.map((entry) => (
+                <li key={entry.at + entry.what}>
+                  {t('kiosk.failedWritesItem', {
+                    what: entry.what,
+                    time: new Date(entry.at).toLocaleTimeString(),
+                    code: entry.code,
+                  })}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => {
+                clearFailedWrites();
+                setFailedWrites([]);
+              }}
+              className="mt-2 text-xs font-bold text-danger-ink underline underline-offset-2"
+            >
+              {t('kiosk.failedWritesDismiss')}
+            </button>
+          </div>
+        ) : null}
+
         {!branch ? (
           <div className="space-y-3">
             {BRANCH_LIST.map((entry, index) => (
               <button
                 key={entry.id}
                 type="button"
-                onClick={() => setSelected(entry.id)}
+                onClick={() => {
+                  setSelected(entry.id);
+                  rememberShop(entry.id);
+                }}
                 style={{ animationDelay: `${index * 70}ms` }}
                 className="group flex w-full animate-fade-up items-center gap-4 rounded-3xl border border-line bg-surface-card p-5 text-left shadow-soft transition-all duration-300 ease-expo hover:-translate-y-0.5 hover:shadow-lift tap-none"
               >
@@ -282,7 +424,12 @@ export default function KioskGatePage() {
 
                 <button
                   type="button"
-                  onClick={() => { setSelected(null); setPin(''); setError(null); }}
+                  onClick={() => {
+                    setSelected(null);
+                    rememberShop(null);
+                    setPin('');
+                    setError(null);
+                  }}
                   className="mt-3 inline-flex w-full items-center justify-center gap-2 text-xs font-semibold text-ink-subtle transition-colors hover:text-ink"
                 >
                   <LuArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />

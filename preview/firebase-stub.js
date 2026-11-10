@@ -320,6 +320,9 @@ export const onSnapshot = (ref, onNext, onError) => {
 
 export const getDocs = async (ref) => snapshotOf(ref.name, ref.constraints ?? []);
 
+/* The preview store IS the device cache, so a cache read is just a read. */
+export const getDocsFromCache = async (ref) => snapshotOf(ref.name, ref.constraints ?? []);
+
 export const getDoc = async (ref) => {
   let data = collections[ref.name]?.get(ref.id);
 

@@ -102,24 +102,20 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    const token = await nextUser.getIdTokenResult().catch(() => null);
+    /* Decided from the account this device already holds, where that is
+       enough — before asking Firebase for the token.
 
-    /* A kiosk signs in with a custom token and has no email. It is a valid
-       identity, just not an administrator — checking the allowlist first
-       would sign the shop tablet straight back out. */
-    if (token?.claims?.kiosk === true) {
-      rejectedEmail.current = null;
-      setErrorKind(null);
-      setError(null);
-      setClaims(token.claims);
-      setUser(nextUser);
-      setStatus(AUTH_STATUS.KIOSK);
-      return;
-    }
-
+       Asking for the token first made every page open wait on the network
+       whenever the cached token was over an hour old: the owner opening the
+       dashboard in the morning sat on "Checking your session…" for a round
+       trip before anything showed. An anonymous kiosk and a verified,
+       allowlisted administrator need nothing from the token to be told
+       apart; it is fetched in the background for its claims. Everything else
+       (custom-token kiosks, unverified addresses) still waits for it below,
+       because there the claims ARE the answer. */
     /* A development kiosk: signed in anonymously because verifyBranchPin is
-       not deployed to mint the branch-scoped custom token the check above
-       looks for. It has no claims and no email, so the allowlist check below
+       not deployed to mint the branch-scoped custom token the check further
+       down looks for. It has no claims and no email, so the allowlist check below
        would call it a rejected admin and sign it out — which is precisely
        what happened: the tablet unlocked, navigated to the roster, and was
        signed out between the two. Every read then went out unauthenticated
@@ -135,11 +131,48 @@ export function AuthProvider({ children }) {
       rejectedEmail.current = null;
       setErrorKind(null);
       setError(null);
-      setClaims(token?.claims ?? null);
+      setClaims(null);
       setUser(nextUser);
       setStatus(AUTH_STATUS.KIOSK);
       return;
     }
+
+    if (nextUser.email && nextUser.emailVerified && isAllowlistedAdmin(nextUser.email)) {
+      rejectedEmail.current = null;
+      setErrorKind(null);
+      setError(null);
+      setUser(nextUser);
+      setStatus(AUTH_STATUS.AUTHENTICATED);
+      nextUser
+        .getIdTokenResult()
+        .then((token) => {
+          setClaims(token?.claims ?? null);
+          if (token && token.claims.admin !== true) {
+            console.warn(
+              '[auth] Signed in as an allowlisted admin, but the `admin` custom claim is missing. ' +
+                'Run the setAdminClaims function, then sign out and back in.',
+            );
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+
+    const token = await nextUser.getIdTokenResult().catch(() => null);
+
+    /* A kiosk signs in with a custom token and has no email. It is a valid
+       identity, just not an administrator — checking the allowlist first
+       would sign the shop tablet straight back out. */
+    if (token?.claims?.kiosk === true) {
+      rejectedEmail.current = null;
+      setErrorKind(null);
+      setError(null);
+      setClaims(token.claims);
+      setUser(nextUser);
+      setStatus(AUTH_STATUS.KIOSK);
+      return;
+    }
+
 
     if (!isAllowlistedAdmin(nextUser.email)) {
       rejectedEmail.current = nextUser.email;
